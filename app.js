@@ -166,7 +166,7 @@
   // "All" and search: line header (name only) and product rows.
   function lineBlock(l, ps, q, ctx) {
     var all = SW.productsIn(l.id), n = inCart(q, l);
-    var meta = [parentPath(l, 1), all.length > 1 ? all.length + ' ' + posWord(all.length) : ''].filter(Boolean).join(' · ');
+    var meta = parentPath(l, 1);
     return '<section class="ln" aria-labelledby="ln-' + ctx + '-' + l.id + '">' +
       '<header class="ln-head"><div class="ln-t"><h2 id="ln-' + ctx + '-' + l.id + '">' + esc(l.name) + '</h2>' +
         (meta ? '<p class="ln-meta">' + esc(meta) + '</p>' : '') + '</div>' +
@@ -183,7 +183,7 @@
       '<h2 class="acc-h"><button type="button" class="ln-toggle" data-act="toggle" data-id="' + l.id + '" aria-expanded="' + open + '" aria-controls="' + bodyId + '" data-fk="t-' + l.id + '">' +
         '<span class="ln-chev">' + I.chev + '</span>' +
         '<span class="acc-t"><span class="acc-name">' + esc(l.name) + '</span>' +
-        '<span class="acc-meta">' + (parent ? '<span class="acc-path">' + esc(parent) + ' · </span>' : '') + '<span>' + all.length + ' ' + posWord(all.length) + '</span></span></span>' +
+        (parent ? '<span class="acc-meta"><span class="acc-path">' + esc(parent) + '</span></span>' : '') + '</span>' +
       '</button></h2>' +
       (open ? '<div class="ln-body" id="' + bodyId + '">' + fillHTML(l, 'c', true) + '<ul class="rows">' + all.map(function (p) { return row(p, 'c'); }).join('') + '</ul></div>' : '') +
       '</section>';
@@ -214,17 +214,15 @@
   function renderList(r) {
     var q = SW.quote(), sel = r.name === 'catalog' ? r.id : null;
     var lines = SW.lines(sel);
-    var nProd = lines.reduce(function (a, l) { return a + SW.productsIn(l.id).length; }, 0);
-    var info = nProd + ' ' + posWord(nProd) + ' · цены ' + SW.tierLabel(SW.tier);
     if (!sel) {
-      var head = '<div class="sec-head"><h1>Всё в наличии</h1><p class="muted small">' + info + '</p></div>';
+      var head = '<div class="sec-head"><h1>Всё в наличии</h1></div>';
       return '<div class="view">' + chipsHTML(null) + head + '<div class="list">' + lines.map(function (l) { return lineBlock(l, SW.productsIn(l.id), q, 'c'); }).join('') + '</div></div>';
     }
     if (lines.length === 1 && ui.open[lines[0].id] === undefined) ui.open[lines[0].id] = true;
     var ids = lines.map(function (l) { return l.id; });
     var allOpen = ids.length && ids.every(function (id) { return ui.open[id]; });
     var skip = Math.max(1, SW.path(sel).length);
-    var head2 = '<div class="sec-head row"><div><h1>' + esc(SW.folder(sel).name) + '</h1><p class="muted small">' + lines.length + ' ' + SW.plural(lines.length, 'линейка', 'линейки', 'линеек') + ' · ' + info + '</p></div>' +
+    var head2 = '<div class="sec-head row"><div><h1>' + esc(SW.folder(sel).name) + '</h1></div>' +
       (ids.length > 1 ? '<button type="button" class="ghost-btn" data-act="toggle-all" data-v="' + (allOpen ? '0' : '1') + '" data-fk="toggle-all">' + (allOpen ? I.collapse + 'Свернуть все' : I.expand + 'Развернуть все') + '</button>' : '') + '</div>';
     var list = lines.length ? '<div class="list acc-list">' + lines.map(function (l) { return lineAcc(l, q, skip); }).join('') + '</div>' :
       empty(I.box, 'Здесь пока пусто', 'В этой категории сейчас нет товаров в наличии.', '<a class="btn" href="#/">Весь каталог</a>');
@@ -240,7 +238,7 @@
     }
     var groups = SW.search(query);
     var total = groups.reduce(function (a, g) { return a + g.products.length; }, 0);
-    var head = '<div class="sec-head"><h1>«' + esc(query) + '»</h1><p class="muted small">' + (total ? 'Найдено ' + total + ' ' + posWord(total) + ' · цены ' + SW.tierLabel(SW.tier) : 'Ничего не нашлось') + '</p></div>';
+    var head = '<div class="sec-head"><h1>«' + esc(query) + '»</h1><p class="muted small">' + (total ? 'Найдено ' + total + ' ' + posWord(total) : 'Ничего не нашлось') + '</p></div>';
     if (!groups.length) {
       return '<div class="view">' + head + empty(I.search, 'Ничего не найдено', 'Проверьте написание или поищите по бренду. Мы также искали «' + esc(SW.swapLayout(query.toLowerCase())) + '» в другой раскладке.', '<a class="btn" href="#/">Весь каталог</a>') + '</div>';
     }
