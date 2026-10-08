@@ -183,7 +183,7 @@
       '<h2 class="acc-h"><button type="button" class="ln-toggle" data-act="toggle" data-id="' + l.id + '" aria-expanded="' + open + '" aria-controls="' + bodyId + '" data-fk="t-' + l.id + '">' +
         '<span class="ln-chev">' + I.chev + '</span>' +
         '<span class="acc-t"><span class="acc-name">' + esc(l.name) + '</span>' +
-        '<span class="acc-meta">' + (parent ? '<span class="acc-path">' + esc(parent) + ' · </span>' : '') + '<span>' + all.length + ' ' + posWord(all.length) + '</span>' + + '</span></span>' +
+        '<span class="acc-meta">' + (parent ? '<span class="acc-path">' + esc(parent) + ' · </span>' : '') + '<span>' + all.length + ' ' + posWord(all.length) + '</span></span></span>' +
       '</button></h2>' +
       (open ? '<div class="ln-body" id="' + bodyId + '">' + fillHTML(l, 'c', true) + '<ul class="rows">' + all.map(function (p) { return row(p, 'c'); }).join('') + '</ul></div>' : '') +
       '</section>';
