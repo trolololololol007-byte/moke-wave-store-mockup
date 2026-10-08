@@ -93,19 +93,18 @@
     }
   }
 
-  // The side rail has no search tab (search lives in the header); the phone tab bar keeps it.
-  function tabsHTML(r, withSearch) {
-    var q = SW.quote(), act = r.name === 'done' ? 'checkout' : (r.name === 'catalog' || (r.name === 'search' && !withSearch) ? 'home' : r.name);
+  // No search tab: search lives in the header field.
+  function tabsHTML(r) {
+    var q = SW.quote(), act = r.name === 'done' ? 'checkout' : (r.name === 'catalog' || r.name === 'search' ? 'home' : r.name);
     var tabs = [
       ['home', ui.lastCatalog, 'Каталог', I.list],
-      withSearch && ['search', '#/search' + (r.name === 'search' && r.q ? '?q=' + encodeURIComponent(r.q) : ''), 'Поиск', I.search],
       ['cart', '#/cart', 'Корзина', I.bag],
       ['checkout', '#/checkout', 'Заказ', I.receipt]
-    ].filter(Boolean);
+    ];
     return tabs.map(function (t) {
       var on = act === t[0];
       var badge = t[0] === 'cart' && q.units ? '<span class="tab-badge" aria-label="' + q.units + ' шт в корзине">' + q.units + '</span>' : '';
-      return '<a class="tab' + (on ? ' is-active' : '') + '" href="' + t[1] + '"' + (on ? ' aria-current="page"' : '') + (t[0] === 'search' ? ' data-act="tab-search"' : '') + '>' +
+      return '<a class="tab' + (on ? ' is-active' : '') + '" href="' + t[1] + '"' + (on ? ' aria-current="page"' : '') + '>' +
         '<span class="tab-ic">' + t[3] + badge + '</span><span class="tab-txt">' + t[2] + '</span></a>';
     }).join('');
   }
@@ -502,7 +501,7 @@
   }
   function refreshCart(q) {
     var r = route();
-    $$('[data-tabs]').forEach(function (el) { patch(el, tabsHTML(r, !!el.closest('.tabbar'))); });
+    $$('[data-tabs]').forEach(function (el) { patch(el, tabsHTML(r)); });
     patch($('#panel'), renderPanel(r));
     var showBar = q.units > 0 && isList(r);
     document.body.classList.toggle('has-bar', showBar);
@@ -567,7 +566,6 @@
         var dark = cur ? cur === 'dark' : DARK.matches;
         document.documentElement.setAttribute('data-theme', dark ? 'light' : 'dark'); store.set('theme', dark ? 'light' : 'dark'); themeIcon(); break;
       }
-      case 'tab-search': e.preventDefault(); go(t.getAttribute('href')); setTimeout(function () { $('#q').focus(); }, 0); break;
       case 'clear-q': $('#q').value = ''; $('#q').focus(); if (route().name === 'search') go('#/search'); $('.search-clear').hidden = true; break;
       case 'copy': SW.copyNumber(t.getAttribute('data-v')); ui.copied = true; render(); break;
       case 'new-ask': ui.confirmNew = true; render(); { var y = $('[data-act="new-no"]'); if (y) y.focus(); } break;
