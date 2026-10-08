@@ -138,7 +138,7 @@ main { outline: none; padding: 4px var(--g) 24px; }
 
 /* ---------- bottom tabs ---------- */
 .tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; background: var(--surface); box-shadow: 0 -1px 0 var(--line); padding-bottom: var(--safe-b); }
-.tabbar-in { height: var(--tab-h); display: grid; grid-template-columns: repeat(3, 1fr); }
+.tabbar-in { height: var(--tab-h); display: grid; grid-template-columns: repeat(2, 1fr); }
 .tab { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: var(--muted); text-decoration: none; font-size: 12px; font-weight: 600; min-height: 44px; position: relative; }
 .tab-ic { position: relative; display: grid; place-items: center; width: 56px; height: 30px; border-radius: var(--pill); transition: background .15s; }
 .tab.is-active { color: var(--accent); }
