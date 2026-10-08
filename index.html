@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Smoke Wave опт</title>
+<meta name="theme-color" content="#0d5c4f">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script>try{var t=localStorage.getItem('sw-final-theme');if(t)document.documentElement.setAttribute('data-theme',JSON.parse(t));}catch(e){}</script>
+</head>
+<body>
+<a class="skip" href="#main">К содержимому</a>
+<div class="app">
+  <nav class="rail" aria-label="Разделы">
+    <a class="rail-logo" href="#/" aria-label="Smoke Wave, каталог"><span class="mark">SW</span></a>
+    <div class="rail-tabs" data-tabs></div>
+    <button class="icon-btn rail-theme" type="button" data-act="theme" aria-label="Сменить тему"></button>
+  </nav>
+
+  <div class="center">
+    <header class="top">
+      <div class="top-brand">
+        <a class="brand" href="#/"><span class="mark">SW</span><span class="brand-txt"><b>Smoke Wave</b><small>оптовый заказ</small></span></a>
+        <button class="icon-btn" type="button" data-act="theme" aria-label="Сменить тему"></button>
+      </div>
+      <div class="top-tools">
+        <form class="search" role="search" id="search-form" autocomplete="off">
+          <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <input id="q" type="search" placeholder="Найти вкус или бренд" aria-label="Поиск по каталогу" enterkeyhint="search">
+          <button type="button" class="search-clear" data-act="clear-q" aria-label="Очистить поиск" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+          </button>
+        </form>
+        <div class="tiers" role="group" aria-label="Цены по количеству в заказе">
+          <span class="tiers-label" aria-hidden="true">Цены</span>
+          <div class="seg" id="tiers"></div>
+        </div>
+      </div>
+    </header>
+    <main id="main" tabindex="-1"></main>
+  </div>
+
+  <aside class="panel" id="panel" aria-label="Корзина"></aside>
+</div>
+
+<div class="minibar" id="minibar"></div>
+<nav class="tabbar" aria-label="Разделы"><div class="tabbar-in" data-tabs></div></nav>
+
+<div class="sheet" id="sheet" hidden>
+  <div class="sheet-backdrop" data-act="sheet-close"></div>
+  <section class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="sheet-title" tabindex="-1">
+    <button class="sheet-handle" type="button" data-act="sheet-close" aria-label="Свернуть корзину"><span></span></button>
+    <div class="sheet-in" id="sheet-in"></div>
+  </section>
+</div>
+
+<div class="snack-wrap" aria-live="polite" role="status" id="snack"></div>
+<div class="demo" id="demo"></div>
+
+<script src="./data.js"></script>
+<script src="./core.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
