@@ -29,6 +29,7 @@
     demoOpen: false,
     copied: false,
     confirmNew: false,
+    undo: null,          // { id, qty } of the last item removed with the cross
     lastCatalog: '#/'
   };
 
@@ -97,7 +98,7 @@
   function tabsHTML(r) {
     var q = SW.quote(), act = r.name === 'checkout' || r.name === 'done' ? 'cart' : (r.name === 'catalog' || r.name === 'search' ? 'home' : r.name);
     var tabs = [
-      ['home', ui.lastCatalog, 'Каталог', I.list],
+      ['home', r.name === 'catalog' ? '#/' : ui.lastCatalog, 'Каталог', I.list], // inside a category: back to "All"
       ['cart', '#/cart', 'Корзина', I.bag]
     ];
     return tabs.map(function (t) {
@@ -256,13 +257,14 @@
       return '<section class="cl"><header class="cl-head"><b>' + esc(l.line.name) + '</b>' + (one != null ? '<span>' + money(one) + ' за шт</span>' : '') + '</header>' +
         l.items.map(function (it) {
           var p = it.product;
-          return '<div class="ci"><div class="ci-info"><span class="ci-name">' + esc(SW.flavor(p)) + '</span>' +
+          return '<div class="ci"><button type="button" class="ci-x" data-act="remove" data-id="' + p.id + '" data-fk="' + k + '-x-' + p.id + '" aria-label="Убрать из корзины: ' + esc(SW.flavor(p)) + '">' + I.close + '</button><div class="ci-info"><span class="ci-name">' + esc(SW.flavor(p)) + '</span>' +
             (one == null ? '<span class="ci-meta">' + money(it.price) + ' за шт</span>' : '') + '</div>' +
             stepper(p, it.qty, k + '-' + p.id, true) + '<b class="ci-sum">' + money(it.sum) + '</b></div>';
         }).join('') + '</section>';
     }).join('');
   }
   function noticeHTML(q) {
+    if (q.short) return '<div class="notice is-warn" role="status">' + I.warn + '<span>Вы выбрали цены ' + SW.tierLabel(q.short.tier) + ': добавьте ещё <b>' + pcs(q.short.need) + '</b>. Сейчас в заказе ' + pcs(q.units) + ', поэтому цены ' + SW.tierLabel(q.tier) + '.</span></div>';
     var t = SW.cartNotice(q);
     return t ? '<div class="notice" role="status">' + I.gift + '<span>' + esc(t) + '</span></div>' : '';
   }
@@ -440,11 +442,13 @@
 
   /* ---------- toast ---------- */
   var snackTimer;
-  function snack(text, kind) {
+  function snack(text, kind, undo) {
     var el = $('#snack');
-    el.innerHTML = '<div class="snack ' + (kind || '') + '">' + (kind === 'gift' ? I.gift : I.check) + '<span>' + esc(text) + '</span><button type="button" class="snack-x" data-act="snack-x" aria-label="Скрыть уведомление">' + I.close + '</button></div>';
+    el.innerHTML = '<div class="snack ' + (kind || '') + '">' + (kind === 'gift' ? I.gift : I.check) + '<span>' + esc(text) + '</span>' +
+      (undo ? '<button type="button" class="snack-undo" data-act="undo">Вернуть</button>' : '') +
+      '<button type="button" class="snack-x" data-act="snack-x" aria-label="Скрыть уведомление">' + I.close + '</button></div>';
     var s = el.firstChild; requestAnimationFrame(function () { s.classList.add('is-in'); });
-    clearTimeout(snackTimer); snackTimer = setTimeout(hideSnack, 6000);
+    clearTimeout(snackTimer); snackTimer = setTimeout(function () { ui.undo = null; hideSnack(); }, undo ? 5000 : 6000);
   }
   function hideSnack() { var s = $('#snack .snack'); if (!s) return; s.classList.remove('is-in'); setTimeout(function () { if (s.parentNode) s.parentNode.removeChild(s); }, 250); }
   function cartVisible() { return ui.sheet || route().name === 'cart'; }
@@ -455,7 +459,7 @@
     var b = function (act, t, s) { return '<button type="button" data-act="' + act + '"><b>' + t + '</b><small>' + s + '</small></button>'; };
     return '<div class="demo-card" role="region" aria-label="Демо-панель"><div class="demo-h"><span>' + I.flask + 'Демо</span><button type="button" class="icon-btn sm" data-act="demo-toggle" aria-expanded="true" aria-label="Свернуть демо-панель">' + I.close + '</button></div>' +
       b('demo-upgrade', 'от 10 → 50 шт в заказе', 'каталог от 10, корзина от 50') +
-      b('demo-individual', 'от 100, 10 шт', 'цены не меняются') +
+      b('demo-individual', 'от 100, 10 шт', 'цены от 10, не хватает 90 шт') +
       b('demo-below', 'Ниже минимума', '3 шт, оформить нельзя') +
       b('demo-single', '11 шт одного вкуса', 'минимум набран') +
       b('demo-clear', 'Очистить', 'пустая корзина') +
@@ -568,10 +572,17 @@
       case 'new-no': ui.confirmNew = false; render(); { var n = $('[data-act="new-ask"]'); if (n) n.focus(); } break;
       case 'new-yes': SW.newOrder(); resetCheckoutUI(); go('#/'); snack('Корзина и данные очищены. Можно собирать новый заказ'); break;
       case 'retry': submitOrder(); break;
-      case 'snack-x': hideSnack(); break;
+      case 'snack-x': ui.undo = null; hideSnack(); break;
+      case 'remove': {
+        var rid = t.getAttribute('data-id'), rp = SW.product(rid);
+        ui.undo = { id: rid, qty: SW.qty(rid) };
+        SW.setQty(rid, 0);
+        snack('Убрали «' + SW.flavor(rp) + '»', '', true); break;
+      }
+      case 'undo': if (ui.undo) SW.setQty(ui.undo.id, ui.undo.qty); ui.undo = null; hideSnack(); break;
       case 'demo-toggle': ui.demoOpen = !ui.demoOpen; refreshCart(SW.quote()); { var f = ui.demoOpen ? $('.demo-card button') : $('.demo-pill'); if (f) f.focus(); } break;
       case 'demo-upgrade': SW.demo('upgrade'); if (cartVisible()) snack(SW.cartNotice(), 'gift'); else snack('В корзине 50 шт: в каталоге цены от 10, в корзине пересчитаны'); break;
-      case 'demo-individual': SW.demo('individual'); snack('Выбрано «от 100», в заказе 10 шт: цены остаются от 100'); break;
+      case 'demo-individual': SW.demo('individual'); snack('Выбрано «от 100», в заказе 10 шт: в корзине цены от 10 и подсказка, сколько добрать'); break;
       case 'demo-below': SW.demo('below'); snack('3 шт на ' + money(SW.quote().sum) + ': оформление недоступно'); break;
       case 'demo-single': SW.demo('single'); snack('11 шт одного вкуса: минимум набран'); break;
       case 'demo-clear': SW.clearCart(); break;

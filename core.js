@@ -1,6 +1,6 @@
 /* Smoke Wave customer store mockup: shared core (PRD 5.4: W-1, W-5, W-6, W-11, W-14 to W-19).
-   - One price tier for the whole order: the higher of the selected tier and the tier by total units.
-   - Catalog shows selected-tier prices; repricing happens only in the basket.
+   - One price tier for the whole order, set by total units: 1-29 -> 10+, 30-49 -> 30+, 50-99 -> 50+, 100+ -> 100+.
+   - Catalog shows the selected tier; the basket shows actual prices and how many units are missing to the selected tier.
    - Minimum order: 100 BYN and 5 units. Products without stock are hidden.
    - Checkout fields depend on the delivery method; checkout opens the bot with a one-time link.
    Load after data.js; the UI calls SW.init(name) and renders itself. */
@@ -125,7 +125,7 @@
     cart = cart || state.cart; selected = selected || state.tier;
     var units = 0;
     Object.keys(cart).forEach(function (id) { if (products[id]) units += cart[id] || 0; });
-    var tier = Math.max(selected, qtyTier(units));
+    var tier = qtyTier(units); // the selected tier is a target, not a minimum
     var lineMap = {}, order = [];
     Object.keys(cart).forEach(function (id) {
       var p = products[id]; if (!p || !cart[id]) return;
@@ -141,10 +141,11 @@
       l.items.forEach(function (it) { res.sum += it.sum; res.baseSum += it.baseSum; });
       res.positions += l.items.length; res.lines.push(l);
     });
-    res.sum = r2(res.sum); res.baseSum = r2(res.baseSum); res.savings = r2(res.baseSum - res.sum);
+    res.sum = r2(res.sum); res.baseSum = r2(res.baseSum); res.savings = Math.max(0, r2(res.baseSum - res.sum));
+    res.short = units > 0 && selected > tier ? { tier: selected, need: selected - units, extra: r2(res.sum - res.baseSum) } : null;
     var nt = nextTier(tier);
     res.next = null;
-    if (nt && units > 0) {
+    if (nt && units > 0 && !res.short) {
       var all = res.lines.reduce(function (a, l) { return a.concat(l.items); }, []);
       var perUnit = r2(all.reduce(function (a, it) { return a + (price(it.product, tier) - price(it.product, nt)) * it.qty; }, 0) / units);
       if (perUnit > 0) res.next = { tier: nt, need: nt - units, perUnit: perUnit };
@@ -229,7 +230,7 @@
   var DEMO = {
     // 10+ selected, 50 units across lines -> 50+ prices for the whole order, discount
     upgrade: { tier: 10, cart: { '8a497433-ac51-11f1-0a80-1b53001ba3c4': 20, '8a4f20c6-ac51-11f1-0a80-1b53001ba3cc': 10, 'aca40fd3-ac50-11f1-0a80-1b53001a2f24': 10, '1d9a370c-ac51-11f1-0a80-1b53001afb6e': 5, 'b6d3cf74-ac50-11f1-0a80-1b53001a44e5': 5 } },
-    // Individual price list: 100+ selected, 10 units -> prices stay
+    // 100+ selected, 10 units -> basket at 10+ prices, 90 units missing to 100+
     individual: { tier: 100, cart: { '8a497433-ac51-11f1-0a80-1b53001ba3c4': 5, '8a4f20c6-ac51-11f1-0a80-1b53001ba3cc': 5 } },
     // Below minimum: 3 units for about 31 BYN
     below: { tier: 10, cart: { 'b6d3cf74-ac50-11f1-0a80-1b53001a44e5': 2, '1d9a370c-ac51-11f1-0a80-1b53001afb6e': 1 } },
@@ -262,8 +263,9 @@
   var a = quote(DEMO.upgrade.cart, 10);
   console.assert(a.units === 50 && a.tier === 50 && a.savings > 0 && a.min.ok, '10+ with 50 units in the order -> 50+ prices for the whole order');
   var b = quote(DEMO.individual.cart, 100);
-  console.assert(b.tier === 100 && b.savings === 0, '100+ with 10 units -> prices unchanged');
-  console.assert(quote({ '8a497433-ac51-11f1-0a80-1b53001ba3c4': 40 }, 50).tier === 50, 'selected tier is the minimum');
+  console.assert(b.tier === 10 && b.short && b.short.need === 90, '100+ with 10 units -> 10+ prices, 90 units missing');
+  var s40 = quote({ '8a497433-ac51-11f1-0a80-1b53001ba3c4': 40 }, 50);
+  console.assert(s40.tier === 30 && s40.short.need === 10, 'units decide the tier; the basket shows units missing to the selected tier');
   var c = quote(DEMO.below.cart, 10);
   console.assert(!c.min.ok && c.min.needUnits === 2, 'below minimum: units missing');
   console.assert(quote(DEMO.single.cart, 10).min.ok, 'one product with 11 units meets the minimum');
