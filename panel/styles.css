@@ -220,7 +220,12 @@ a.who-btn { text-decoration: none; font-weight: 600; font-size: 14px; }
 .task .btn svg { width: 16px; height: 16px; }
 @media (max-width: 640px) { .tasks .task { flex-direction: column; align-items: stretch; } .task .task-acts { max-width: none; justify-content: flex-start; } }
 .ghost-btn.is-on { border-color: var(--warn); color: var(--warn); background: var(--warn-soft); }
-.ch-msgs { list-style: none; margin: 0; padding: 12px; display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface-2); max-height: 52vh; overflow-y: auto; }
+.ch-box { display: flex; flex-direction: column; min-height: 300px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface-2); overflow: hidden; }
+.ch-msgs { flex: 1; min-height: 0; list-style: none; margin: 0; padding: 12px; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; overscroll-behavior: contain; }
+.ch-box .ch-form { padding: 8px; border-top: 1px solid var(--line); background: var(--surface); }
+.ch-box .ch-bar { background: var(--surface-2); }
+.ch-box .ch-form .help { font-size: 11.5px; }
+.ch-blocked { margin: 0; border-radius: 0; }
 .m { max-width: 84%; display: flex; flex-direction: column; gap: 2px; }
 .m p { margin: 0; padding: 8px 12px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); overflow-wrap: anywhere; white-space: pre-wrap; }
 .m small { font-size: 11.5px; color: var(--muted); padding: 0 4px; }
@@ -260,7 +265,6 @@ button.chip { cursor: pointer; }
   .ch.has-cur .ch-side { display: flex; }
   .ch-empty { display: grid; place-items: center; min-height: 240px; border: 1px dashed var(--line); border-radius: var(--r); }
   .ch-head .back { display: none; }
-  .ch-msgs { max-height: 58vh; }
 }
 .acc-btn { min-height: 56px; }
 .acc-btn.is-open .ln-chev { transform: rotate(90deg); color: var(--accent); }

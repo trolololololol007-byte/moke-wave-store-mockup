@@ -281,8 +281,7 @@
       : '<div class="alert alert-warn">' + I.warn + '<p>Вы меняете заказ, который уже у упаковщиков. После сохранения старое сообщение с накладной в группе удалится и уйдёт новое.' +
         (c.blockers.length ? ' Сейчас сохранить нельзя: ' + esc(c.blockers[0]) + '.' : '') + '</p></div>';
     if (o.manual && SWP.editable(o) && o.status === 'accepted') banners += '<div class="alert alert-warn">' + I.warn + '<p>Заказ создан вручную. Выберите контрагента, заполните доставку и добавьте товары через поиск под списком.</p></div>';
-    if (o.status === 'packed') banners += '<div class="alert alert-warn">' + I.check + '<p>Заказ упакован. Чтобы его изменить, верните его упаковщикам.</p>' +
-      '<button class="btn btn-sm" type="button" data-act="to-packing" data-fk="to-packing">Вернуть в «Передан на упаковку»</button></div>';
+    if (o.status === 'packed') banners += '<div class="alert alert-warn">' + I.check + '<p>Заказ упакован, изменить его уже нельзя. Его можно отправить клиенту или удалить: при удалении упаковщики получат «Разобрать».</p></div>';
     if (o.status === 'payment') banners += '<div class="alert alert-warn">' + I.warn + '<p>Заказ ждёт оплаты. Клиент прислал чек: <span class="pdf">' + I.file + 'Чек об оплате.jpg</span></p>' +
       '<button class="btn btn-primary btn-sm" type="button" data-act="receipt-ok" data-fk="receipt-ok">Подтвердить чек и отправить в группу</button><button class="btn btn-sm" type="button" data-act="receipt-no" data-fk="receipt-no">Отклонить чек</button></div>';
     if (cust.id === 'retail' && !o.manual) banners += '<div class="alert alert-warn">' + I.warn + '<p>Клиент ещё не подтвердил заказ в боте, поэтому контрагент «Розничный покупатель». Тег с сайта: ' + esc(o.siteTag) + '.</p></div>';
@@ -417,18 +416,18 @@
             return '<li>' + I.tasks + '<span><b>' + esc(t.title) + '</b>' + (t.n ? ' · <a href="#/order/' + t.n + '">заказ ' + t.n + '</a>' : '') + '</span></li>';
           }).join('') + '</ul>' : '';
         })() +
-        '<ol class="ch-msgs" id="ch-msgs">' + ch.messages.map(function (m) {
+        '<div class="ch-box" id="ch-box"><ol class="ch-msgs" id="ch-msgs">' + ch.messages.map(function (m) {
           var files = (m.files || []).map(function (f) { return '<span class="pdf">' + I.file + esc(f) + '</span>'; }).join('');
           return '<li class="m m-' + m.from + '"><p>' + (m.from === 'm' ? '<b class="m-pre">Сообщение от менеджера:</b>' : '') + esc(m.text) + (files ? '<span class="m-files">' + files + '</span>' : '') + '</p><small>' + (m.from === 'bot' ? 'Бот автоматически · ' : m.from === 'm' ? 'Менеджер · ' : '') + SWP.dateTime(m.at) +
             (m.order ? ' · ' + (SWP.order(m.order) ? '<a href="#/order/' + m.order + '">заказ ' + m.order + '</a>' : 'заказ ' + m.order) : '') + '</small></li>';
         }).join('') + '</ol>' +
-        (c.blocked ? '<p class="alert alert-warn" style="margin:0">' + I.warn + '<span>Клиент заблокирован, бот ему не пишет. Разблокировать можно в <a href="#/settings">настройках</a>.</span></p>'
+        (c.blocked ? '<p class="alert alert-warn ch-blocked">' + I.warn + '<span>Клиент заблокирован, бот ему не пишет. Разблокировать можно в <a href="#/settings">настройках</a>.</span></p>'
           : '<form class="ch-form" id="ch-form">' +
             (ui.chatFiles.length ? '<div class="ch-files">' + ui.chatFiles.map(function (f, i) { return '<span class="pdf">' + I.file + esc(f) + '<button type="button" class="chip-x" data-act="chat-file-x" data-i="' + i + '" aria-label="Убрать файл ' + esc(f) + '">' + I.close + '</button></span>'; }).join('') + '</div>' : '') +
             '<div class="ch-bar"><button type="button" class="icon-btn ch-clip" data-act="chat-file" data-fk="chat-file" aria-label="Прикрепить файл или фото"' + (ui.chatFiles.length >= 5 ? ' disabled' : '') + '>' + I.clip + '</button>' +
             '<label class="sr-only" for="ch-msg">Сообщение клиенту</label><div class="ch-in"><textarea id="ch-msg" data-fk="ch-msg" rows="1" enterkeyhint="send" placeholder="Сообщение клиенту">' + esc(ui.chatDraft) + '</textarea></div>' +
             '<button class="ch-send" type="submit" data-fk="ch-send" aria-label="Отправить сообщение">' + I.send + '</button></div>' +
-            '<p class="help">Enter отправляет, Shift+Enter переносит строку. Можно приложить до 5 файлов: накладную, фото.</p></form>') + '</div>';
+            '<p class="help">Enter отправляет, Shift+Enter переносит строку. До 5 файлов.</p></form>') + '</div></div>';
     }
     return '<div class="pg"><div class="pg-head"><h1>Чаты</h1></div><div class="ch' + (cur ? ' has-cur' : '') + '">' + side + thread + '</div></div>';
   }
@@ -669,6 +668,7 @@
       : r.name === 'settings' ? settingsHTML()
       : queueHTML();
     patch(main, html);
+    if (r.name === 'chats') { var keepScroll = ui.chatShown === r.id; fitChat(); if (!keepScroll) { scrollChat(); ui.chatShown = r.id; } } else ui.chatShown = null;
     patch($('#demo'), demoHTML());
     themeIcon(); renderDialog();
   }
@@ -688,6 +688,14 @@
     render();
   }
   function scrollChat() { var m = $('#ch-msgs'); if (m) m.scrollTop = m.scrollHeight; }
+  // The message window takes the rest of the screen, so the composer is always visible without scrolling the page.
+  function fitChat() {
+    var box = $('#ch-box'); if (!box) return;
+    var bar = $('.tabbar'), reserve = bar && getComputedStyle(bar).display !== 'none' ? bar.offsetHeight + 12 : 20;
+    var top = box.getBoundingClientRect().top + window.scrollY;
+    box.style.height = Math.max(300, window.innerHeight - top - reserve) + 'px';
+  }
+  window.addEventListener('resize', fitChat);
   function unflag(n, lineId) { if (ui.red[n]) delete ui.red[n][lineId]; } // the manager priced the line, the red mark goes away
   function startProcess(n) { ui.dialog = { type: 'preview', n: n }; renderDialog(); }
   var ACT = {
@@ -848,7 +856,6 @@
       else send();
     },
     'dispatch-revert': function (b, n) { if (SWP.revertDispatch(n)) toast('Заказ ' + n + ' снова «Упакован» и вернётся в задачу проверки почты'); },
-    'to-packing': function (b, n) { if (SWP.backToPacking(n)) toast('Заказ ' + n + ' снова у упаковщиков, его можно править'); },
     'resend-edit': function (b, n) {
       ask(n, 'Отправить новую накладную?', 'Старое сообщение с накладной в группе упаковщиков удалится, вместо него уйдёт новое. Отгрузка в МойСклад обновится сама, клиент получит новую накладную.', [
         { label: 'Сохранить и отправить', run: function () { if (SWP.resendEdited(n)) { ui.editing = null; render(); toast('Заказ ' + n + ' изменён. Новая накладная отправлена клиенту и в группу'); } } }

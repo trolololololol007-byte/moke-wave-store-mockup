@@ -425,8 +425,7 @@
     });
   }
   function setOriginal(n, num) { touch(order(n), function (o) { o.original = +num || null; }); }
-  // A-32: a packed order can go back to the packers, and an order with the packers is edited in place.
-  function backToPacking(n) { var o = order(n); if (!o || o.status !== 'packed') return false; o.status = 'packing'; emit(); return true; }
+  // A-32: an order with the packers is edited in place; a packed order can no longer be changed.
   function resendEdited(n) {
     var o = order(n); if (!o || o.status !== 'packing' || !o.dirty) return false;
     var c = compute(o); if (c.blockers.length || c.trackingBad) return false;
@@ -595,7 +594,7 @@
     packingMessage: packingMessage, processDraft: processDraft, processSend: processSend, createOrder: createOrder, createCustomer: createCustomer, approveReceipt: approveReceipt,
     approvePhone: approvePhone, offerOtherDelivery: offerOtherDelivery, setBlocked: setBlocked, receiptToMinibus: receiptToMinibus,
     canReturn: canReturn, returnForEditing: returnForEditing, removeOrder: removeOrder, restoreOrder: restoreOrder, askRefundDetails: askRefundDetails, payRefund: payRefund, addCustomTask: addCustomTask, closeCustomTask: closeCustomTask,
-    addonTargets: addonTargets, setKind: setKind, setOriginal: setOriginal, backToPacking: backToPacking, resendEdited: resendEdited,
+    addonTargets: addonTargets, setKind: setKind, setOriginal: setOriginal, resendEdited: resendEdited,
     mergeTarget: mergeTarget,
     sendDispatch: sendDispatch, setChangedInMs: setChangedInMs,
     chatOf: chatOf, chatList: chatList, readChat: readChat, sendChat: sendChat, chatHasTask: chatHasTask, chatTasks: chatTasks, orderNeedsAction: orderNeedsAction,
