@@ -302,7 +302,8 @@
 
     var cta;
     if (o.status === 'payment' && o.paid) cta = '<div class="sticky-cta s-cta">' + // the main action of a paid Belposhta order sits where "Process" is
-      '<button class="btn btn-primary btn-lg btn-block' + (c.trackingBad ? ' is-off' : '') + '" type="button" data-act="pack-paid" data-fk="pack-paid">Отправить на сборку</button></div>';
+      (c.trackingBad ? '<p class="blockers cta-note" id="pack-note">Чтобы отправить заказ на сборку, введите трек-код Белпочты в блоке «Доставка».</p>' : '') +
+      '<button class="btn btn-primary btn-lg btn-block' + (c.trackingBad ? ' is-off' : '') + '" type="button" data-act="pack-paid" data-fk="pack-paid"' + (c.trackingBad ? ' aria-describedby="pack-note"' : '') + '>Отправить на сборку</button></div>';
     else if (o.status === 'packing') cta = locked ? '' : '<div class="sticky-cta s-cta">' +
       '<button class="btn btn-primary btn-lg btn-block" type="button" data-act="resend-edit" data-fk="resend-edit"' + (!o.dirty || c.blockers.length || c.trackingBad ? ' disabled' : '') + '>' + (o.dirty ? 'Сохранить и отправить новую накладную' : 'Изменений нет') + '</button></div>';
     else cta = ro ? '' : '<div class="sticky-cta s-cta">' +
