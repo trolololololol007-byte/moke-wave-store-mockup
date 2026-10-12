@@ -58,6 +58,8 @@ body.is-login .app { display: block; }
 .q-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; padding: 12px 0; border-top: 1px solid var(--line); text-decoration: none; color: var(--fg); }
 .q-cards li:first-child .q-card { border-top: 0; }
 .q-card:hover .q-num { color: var(--accent); }
+.need { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--warn); margin-left: 6px; vertical-align: middle; }
+.filters .f-act svg { width: 16px; height: 16px; }
 .q-card .pill { align-self: center; }
 .q-num { font-weight: 800; font-size: 17px; font-variant-numeric: tabular-nums; }
 .q-name { font-weight: 600; overflow-wrap: anywhere; }
@@ -207,6 +209,11 @@ body.is-login .app { display: block; }
 .ch-thread { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .ch-empty { display: none; }
 .ch-head { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; }
+.ch-tasks { list-style: none; margin: 0; padding: 8px 12px; display: flex; flex-direction: column; gap: 4px; border-radius: var(--r-s); background: var(--warn-soft); color: var(--warn); font-size: 13.5px; }
+.ch-tasks li { display: flex; gap: 8px; align-items: flex-start; }
+.ch-tasks svg { width: 16px; height: 16px; margin-top: 2px; }
+.ch-tasks a { color: inherit; }
+a.who-btn { text-decoration: none; font-weight: 600; font-size: 14px; }
 .ch-btns { display: flex; gap: 8px; margin-left: auto; }
 @media (max-width: 640px) { .ch-btns { width: 100%; margin-left: 0; } .ch-btns .ghost-btn { flex: 1; min-width: 0; justify-content: center; padding: 0 8px; font-size: 13px; gap: 4px; } .ch-btns .ghost-btn svg { width: 16px; height: 16px; } }
 .task .task-acts { justify-content: flex-end; flex: none; max-width: 60%; }
@@ -285,7 +292,7 @@ button.chip { cursor: pointer; }
   main { max-width: 1360px; }
   .pg:not(.o-pg) { max-width: 1360px; }
   .login { padding: 40px; }
-  .filters { grid-template-columns: repeat(4, minmax(0, 1fr)) auto; align-items: end; }
+  .filters { grid-template-columns: repeat(4, minmax(0, 1fr)) auto auto; align-items: end; }
   .q-cards { display: none; }
   .q-table { display: table; width: 100%; border-collapse: collapse; }
   .q-table th.num .th-sort { flex-direction: row-reverse; }
@@ -310,7 +317,7 @@ button.chip { cursor: pointer; }
 
 /* ---------- desktop: compact two-column order card ---------- */
 @media (min-width: 1100px) {
-  .filters { grid-template-columns: minmax(260px, 2fr) repeat(4, minmax(0, 1fr)) auto; }
+  .filters { grid-template-columns: minmax(220px, 2fr) repeat(4, minmax(0, 1fr)) auto auto; }
   .filters .search { grid-column: auto; }
   .o-pg { gap: 10px; padding-top: 4px; }
   .o-head { flex-direction: row; align-items: center; gap: 18px; flex-wrap: wrap; }

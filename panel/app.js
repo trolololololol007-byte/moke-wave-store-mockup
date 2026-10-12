@@ -8,13 +8,14 @@
   var esc = SWP.esc, money = SWP.money;
 
   var ui = {
-    filter: { q: '', status: '', delivery: '', from: '', to: '', sort: 'receivedAt', dir: 'desc' },
+    filter: { q: '', status: '', delivery: '', from: '', to: '', action: false, sort: 'receivedAt', dir: 'desc' },
     menu: null,      // line id whose price-list menu is open
     tab: 'note',     // order card tab: 'note' | 'dispatch'
     files: [],       // mock attachments on the "Dispatch" tab
     refundFile: {},  // tasks: mock receipt attached to a refund, keyed by refund id
     chatFiles: [],   // chats: mock attachments of the message being written
-    chatDraft: '',   // chats: the message being typed; a leading "/" opens quick commands
+    chatDraft: '',   // chats: the message being typed
+    editing: null,   // number of the order with the packers that the manager unlocked with "Edit" (A-32)
     taskSort: 'old', // tasks: 'old' (default, oldest first) | 'new'
     citiesOpen: false, setErr: '', red: {}, // settings: cities list and form error; red: lines flagged after "apply customer prices"
     chatQ: '', chatFolder: 'all', // chats: search and folder ('all' | 'marked')
@@ -37,6 +38,8 @@
     flag: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 21V4h11l-2 4 2 4H6"/></svg>',
     clip: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11.5 12.3 19a5 5 0 0 1-7-7.1l8-7.9a3.4 3.4 0 0 1 4.8 4.8l-7.9 7.8a1.8 1.8 0 0 1-2.5-2.5l7.2-7.1"/></svg>',
     send: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12 20 4.5 16.5 20l-4-6.5L4 12Z"/><path d="m12.5 13.5 7.5-9"/></svg>',
+    plus: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
+    edit: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4Z"/><path d="m13.5 6.5 4 4"/></svg>',
     bell: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15L6 16Z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>',
     chat: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4V5Z"/></svg>',
     gear: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>',
@@ -56,7 +59,7 @@
     trash: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M10 7V5h4v2M7 7l1 13h8l1-13"/></svg>',
     file: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h8l4 4v14H6V3Z"/><path d="M14 3v4h4M9 13h6M9 17h6"/></svg>'
   };
-  var PILL = { new: '', details: '', phone: 'is-warn', accepted: 'is-act', queue: 'is-act', processed: 'is-soft', payment: 'is-warn', packing: 'is-soft', packed: 'is-ok', dispatched: 'is-ok', delivered: 'is-ok' };
+  var PILL = { new: '', phone: 'is-warn', accepted: 'is-act', processed: 'is-soft', payment: 'is-warn', packing: 'is-soft', packed: 'is-ok', dispatched: 'is-ok' };
 
   /* ---------- routes ---------- */
   function route() {
@@ -85,7 +88,11 @@
   function pill(o) { return '<span class="pill ' + PILL[o.status] + '">' + esc(SWP.status(o.status).label) + '</span>'; }
   function kindTag(o) { return o.kind === 'addon' ? ' <span class="tag">дозаказ' + (o.original ? ' к ' + o.original : '') + '</span>' : ''; }
   function deliveryText(o) { var d = SWP.delivery(o.delivery.type); return d.label + (o.delivery.type === 'minibus' && o.delivery.city ? ', ' + o.delivery.city : ''); }
-  function who(o) { var c = SWP.customer(o); return c.id === 'retail' && o.siteTag ? c.name + ' (' + o.siteTag + ')' : c.name; }
+  function who(o) {
+    var c = SWP.customer(o);
+    if (c.id === 'retail' && o.manual) return 'Контрагент не выбран';
+    return c.id === 'retail' && o.siteTag ? c.name + ' (' + o.siteTag + ')' : c.name;
+  }
   function options(list, cur, empty) {
     return (empty ? '<option value="">' + empty + '</option>' : '') + list.map(function (x) {
       return '<option value="' + esc(x.id) + '"' + (x.id === cur ? ' selected' : '') + '>' + esc(x.label) + '</option>';
@@ -140,6 +147,7 @@
 
   /* ---------- queue (A-2, AC-39, AC-93, AC-95) ---------- */
   var SORTS = [['number', 'Номер'], ['receivedAt', 'Дата и время'], ['name', 'Контрагент'], ['total', 'Стоимость'], ['delivery', 'Тип заказа'], ['status', 'Статус']];
+  function needDot(o) { return SWP.orderNeedsAction(o) ? '<span class="need" role="img" aria-label="Требует действия" title="Требует действия"></span>' : ''; }
   function queueListHTML() {
     var f = ui.filter, list = SWP.queue(f);
     if (!list.length) return '<div class="empty"><span class="empty-ic">' + I.search + '</span><h2>Заказов не найдено</h2><p>Измените поиск или сбросьте фильтры.</p><button class="btn" type="button" data-act="filter-reset">Сбросить фильтры</button></div>';
@@ -152,24 +160,25 @@
     return '<p class="q-count">Найдено: ' + list.length + '</p>' +
       '<table class="q-table"><thead><tr>' + head + '</tr></thead><tbody>' +
       rows.map(function (r) {
-        return '<tr data-href="' + r.href + '"><td class="q-n"><a href="' + r.href + '"><b>' + r.o.number + '</b></a>' + kindTag(r.o) + '</td><td><time>' + SWP.dateTime(r.o.receivedAt) + '</time></td><td class="q-who">' + esc(who(r.o)) + '</td>' +
+        return '<tr data-href="' + r.href + '"><td class="q-n"><a href="' + r.href + '"><b>' + r.o.number + '</b></a>' + needDot(r.o) + kindTag(r.o) + '</td><td><time>' + SWP.dateTime(r.o.receivedAt) + '</time></td><td class="q-who">' + esc(who(r.o)) + '</td>' +
           '<td class="num">' + r.sum + '</td><td>' + esc(deliveryText(r.o)) + '</td><td>' + pill(r.o) + '</td></tr>';
       }).join('') + '</tbody></table>' +
       '<ul class="q-cards">' + rows.map(function (r) {
-        return '<li><a class="q-card" href="' + r.href + '"><span><span class="q-num">' + r.o.number + '</span>' + kindTag(r.o) + '</span>' + pill(r.o) +
+        return '<li><a class="q-card" href="' + r.href + '"><span><span class="q-num">' + r.o.number + '</span>' + needDot(r.o) + kindTag(r.o) + '</span>' + pill(r.o) +
           '<span class="q-name">' + esc(who(r.o)) + '</span><span class="q-sum">' + r.sum + '</span>' +
           '<span class="q-meta">' + SWP.dateTime(r.o.receivedAt) + ' · ' + esc(deliveryText(r.o)) + '</span></a></li>';
       }).join('') + '</ul>';
   }
   function queueHTML() {
     var f = ui.filter;
-    return '<div class="pg"><div class="pg-head"><h1>Заказы</h1></div>' +
+    return '<div class="pg"><div class="pg-head"><h1>Заказы</h1><button class="btn btn-primary btn-sm" type="button" data-act="order-new" data-fk="order-new">' + I.plus + 'Создать заказ</button></div>' +
       '<div class="filters">' +
       '<div class="search">' + I.search + '<input type="search" id="q" data-fk="q" value="' + esc(f.q) + '" placeholder="Номер заказа или клиент" aria-label="Поиск по номеру заказа или клиенту" enterkeyhint="search"></div>' +
       '<div class="field"><label for="f-status">Статус</label><select id="f-status" data-filter="status" data-fk="f-status">' + options(SWP.STATUSES, f.status, 'Все статусы') + '</select></div>' +
       '<div class="field"><label for="f-delivery">Тип заказа</label><select id="f-delivery" data-filter="delivery" data-fk="f-delivery">' + options(SWP.DELIVERY, f.delivery, 'Любая доставка') + '</select></div>' +
       '<div class="field"><label for="f-from">Поступил с</label><input id="f-from" type="date" data-filter="from" data-fk="f-from" value="' + esc(f.from) + '"></div>' +
       '<div class="field"><label for="f-to">по</label><input id="f-to" type="date" data-filter="to" data-fk="f-to" value="' + esc(f.to) + '"></div>' +
+      '<button class="ghost-btn f-act' + (f.action ? ' is-on' : '') + '" type="button" data-act="filter-action" data-fk="filter-action" aria-pressed="' + f.action + '">' + I.tasks + 'Требует действия</button>' +
       '<button class="ghost-btn" type="button" data-act="filter-reset">Сбросить</button>' +
       '</div><div id="q-list">' + queueListHTML() + '</div></div>';
   }
@@ -244,32 +253,35 @@
       '<div class="t-sum"><dt>Итог накладной <small>' + c.units + ' шт</small></dt><dd>' + money(c.total) + '</dd></div>' + due + '</dl>';
   }
   function orderHTML(o) {
-    var c = SWP.compute(o), ro = !SWP.editable(o), dis = ro ? ' disabled' : '', cust = SWP.customer(o);
+    var locked = o.status === 'packing' && ui.editing !== o.number; // an order with the packers opens read-only until "Edit" is pressed
+    var c = SWP.compute(o), ro = !SWP.editable(o) || locked, dis = ro ? ' disabled' : '', cust = SWP.customer(o);
     var banners = '';
     if (o.remoteChanged) banners += '<div class="alert alert-warn">' + I.warn + '<p>Другой менеджер изменил этот заказ после того, как вы его открыли. Перед обработкой панель спросит, что делать.</p></div>';
     if (o.pendingRetry) banners += '<div class="alert alert-warn">' + I.warn + '<p><b>Ожидает повтора.</b> МойСклад недоступен, запись стоит в очереди и повторится автоматически. <span class="undecided">Не решено в PRD: после скольких попыток уведомлять (7.3)</span></p></div>';
-    if (o.status === 'processed') banners += '<div class="alert alert-warn">' + I.warn + '<p>Отгрузка создана, но накладная ещё не отправлена ни клиенту, ни упаковщикам.</p><button class="btn btn-sm" type="button" data-act="open-packing">Отправить накладную</button></div>';
     var orig = o.kind === 'addon' && o.original ? SWP.order(o.original) : null;
     if (o.status === 'phone') banners += '<div class="alert alert-warn">' + I.warn + '<p>Клиент указал телефон для маршрутки по Минску: <b>' + esc(o.delivery.phone || '') + '</b>. Проверьте номер и согласуйте.</p>' +
       '<button class="btn btn-primary btn-sm" type="button" data-act="phone-ok" data-fk="phone-ok">Согласовать</button><button class="btn btn-sm" type="button" data-act="phone-no" data-fk="phone-no">Отклонить</button></div>';
-    if (o.status === 'details' && o.offered) banners += '<div class="alert alert-warn">' + I.warn + '<p>Клиенту предложен другой способ доставки. Он выбирает его в боте, заказ вернётся в «Принят» сам.</p></div>';
+    if (o.status === 'new' && o.offered) banners += '<div class="alert alert-warn">' + I.warn + '<p>Клиенту предложен другой способ доставки, поэтому заказ снова «Новый». Когда клиент выберет доставку в боте, заказ станет «Готов к обработке». Без ответа он удалится автоматически, как любой неподтверждённый заказ.</p></div>';
     if (orig && !ro) banners += '<div class="alert alert-warn">' + I.warn + '<p>Это дозаказ к заказу <a href="#/order/' + orig.number + '">' + orig.number + '</a> («' + esc(SWP.status(orig.status).label) + '»). ' +
       (SWP.mergeTarget(o) ? 'Основной заказ ещё не упакован: после обработки дозаказ сам объединится с ним, упаковщики получат одно новое сообщение.'
         : ['packed', 'dispatched'].indexOf(orig.status) >= 0 ? 'Основной заказ уже упакован, объединить нельзя: дозаказ уйдёт упаковщикам отдельным сообщением «Добавить к ' + orig.number + '».'
         : 'Он оформляется отдельным заказом со своей накладной.') + '</p></div>';
-    if (o.merged) banners += '<div class="alert alert-warn">' + I.warn + '<p>В этот заказ добавлен дозаказ ' + o.merged + '.' + (o.status === 'processed' ? '' : ' Проверьте цены и обработайте заказ.') + '</p></div>';
+    if (o.merged) banners += '<div class="alert alert-warn">' + I.warn + '<p>В этот заказ добавлен дозаказ ' + o.merged + '.' + (o.status === 'accepted' ? ' Проверьте цены и обработайте заказ.' : '') + '</p></div>';
     if (o.changedInMs) banners += '<div class="alert alert-warn">' + I.warn + '<p><b>Изменено в МойСклад.</b> Состав или цены заказа поменяли напрямую после обработки.</p>' +
       '<button class="btn btn-sm" type="button" data-act="resend" data-fk="resend">Отправить накладную заново</button></div>';
     if (o.status === 'dispatched') banners += '<div class="alert alert-warn">' + I.check + '<p>Заказ отправлен, клиент получил уведомление.' + (SWP.canRevertDispatch(o) ? ' Если почту отметили по ошибке, статус можно вернуть в течение суток.' : '') + '</p>' +
       (SWP.canRevertDispatch(o) ? '<button class="btn btn-sm" type="button" data-act="dispatch-revert" data-fk="dispatch-revert">Вернуть статус «Упакован»</button>' : '') + '</div>';
-    if (o.status === 'packing') banners += '<div class="alert alert-warn">' + I.warn + '<p>Заказ у упаковщиков. Его можно править: после сохранения старое сообщение с накладной в группе удалится и уйдёт новое.' +
-      (c.blockers.length ? ' Сейчас сохранить нельзя: ' + esc(c.blockers[0]) + '.' : '') + '</p></div>';
+    if (o.status === 'packing') banners += locked
+      ? '<div class="alert alert-warn">' + I.warn + '<p>Заказ у упаковщиков. Чтобы поменять состав, цены или заметки, нажмите «Изменить».</p>' +
+        '<button class="btn btn-primary btn-sm" type="button" data-act="edit-on" data-fk="edit-on">' + I.edit + 'Изменить</button></div>'
+      : '<div class="alert alert-warn">' + I.warn + '<p>Вы меняете заказ, который уже у упаковщиков. После сохранения старое сообщение с накладной в группе удалится и уйдёт новое.' +
+        (c.blockers.length ? ' Сейчас сохранить нельзя: ' + esc(c.blockers[0]) + '.' : '') + '</p></div>';
+    if (o.manual && SWP.editable(o) && o.status === 'accepted') banners += '<div class="alert alert-warn">' + I.warn + '<p>Заказ создан вручную. Выберите контрагента, заполните доставку и добавьте товары через поиск под списком.</p></div>';
     if (o.status === 'packed') banners += '<div class="alert alert-warn">' + I.check + '<p>Заказ упакован. Чтобы его изменить, верните его упаковщикам.</p>' +
       '<button class="btn btn-sm" type="button" data-act="to-packing" data-fk="to-packing">Вернуть в «Передан на упаковку»</button></div>';
     if (o.status === 'payment') banners += '<div class="alert alert-warn">' + I.warn + '<p>Заказ ждёт оплаты. Клиент прислал чек: <span class="pdf">' + I.file + 'Чек об оплате.jpg</span></p>' +
       '<button class="btn btn-primary btn-sm" type="button" data-act="receipt-ok" data-fk="receipt-ok">Подтвердить чек и отправить в группу</button><button class="btn btn-sm" type="button" data-act="receipt-no" data-fk="receipt-no">Отклонить чек</button></div>';
-    if (ro && ['processed', 'payment', 'dispatched'].indexOf(o.status) < 0) banners += '<div class="alert alert-warn">' + I.warn + '<p>Заказ обработан, накладная закрыта для правок.</p></div>';
-    if (cust.id === 'retail') banners += '<div class="alert alert-warn">' + I.warn + '<p>Клиент ещё не подтвердил заказ в боте, поэтому контрагент «Розничный покупатель». Тег с сайта: ' + esc(o.siteTag) + '.</p></div>';
+    if (cust.id === 'retail' && !o.manual) banners += '<div class="alert alert-warn">' + I.warn + '<p>Клиент ещё не подтвердил заказ в боте, поэтому контрагент «Розничный покупатель». Тег с сайта: ' + esc(o.siteTag) + '.</p></div>';
 
     var suggest = c.suggest && !ro ? '<div class="notice is-warn">' + I.warn + '<span>В заказе ' + c.units + ' шт, это уровень «от ' + c.suggest + '», а цены стоят по уровню «от ' + o.tier + '». Цены сами не меняются.</span>' +
       '<button class="btn btn-sm" type="button" data-act="tier-all" data-t="' + c.suggest + '" data-fk="tier-all">Поставить цены от ' + c.suggest + '</button></div>' : '';
@@ -280,7 +292,7 @@
       }).join('') + '</ul>' : '<p class="muted small" style="margin:0">Ничего не найдено среди товаров в наличии.</p>') : '');
 
     var cta;
-    if (o.status === 'packing') cta = '<div class="sticky-cta s-cta">' +
+    if (o.status === 'packing') cta = locked ? '' : '<div class="sticky-cta s-cta">' +
       '<button class="btn btn-primary btn-lg btn-block" type="button" data-act="resend-edit" data-fk="resend-edit"' + (!o.dirty || c.blockers.length || c.trackingBad ? ' disabled' : '') + '>' + (o.dirty ? 'Сохранить и отправить новую накладную' : 'Изменений нет') + '</button></div>';
     else cta = ro ? '' : '<div class="sticky-cta s-cta">' +
       (c.blockers.length ? '<ul class="blockers" id="blockers">' + c.blockers.map(function (b) { return '<li>' + esc(b) + '</li>'; }).join('') + '</ul>' : '') +
@@ -295,7 +307,8 @@
     }).join('') + '</div>' : '';
     var head = '<div class="pg o-pg"><a class="back" href="#/">' + I.chev + 'Заказы</a>' +
       '<div class="o-head"><div class="o-title"><h1>Заказ ' + o.number + '</h1>' + pill(o) + kindTag(o) + '</div>' +
-      '<p class="o-who"><button type="button" class="who-btn" data-act="customer" data-fk="who">' + I.user + '<b>' + esc(who(o)) + '</b></button>' + (cust.blocked ? '<span class="tag is-bad">заблокирован</span>' : '') + (cust.person ? '<span>' + esc(cust.person) + '</span>' : '') +
+      '<p class="o-who"><button type="button" class="who-btn" data-act="customer" data-fk="who">' + I.user + '<b>' + esc(who(o)) + '</b></button>' + (cust.blocked ? '<span class="tag is-bad">заблокирован</span>' : '') + (cust.id !== 'retail' && !cust.tgId ? '<span class="tag">без Telegram</span>' : '') + (cust.person ? '<span>' + esc(cust.person) + '</span>' : '') +
+      (SWP.chatOf(o.customer) ? '<a class="who-btn" href="#/chats/' + o.customer + '">' + I.chat + 'Чат</a>' : '') +
       '<span class="muted">поступил ' + SWP.dateTime(o.receivedAt) + '</span></p>' +
       '<button class="btn btn-sm btn-danger o-del" type="button" data-act="delete" data-fk="delete-top">' + I.trash + 'Удалить заказ</button></div>' + banners + tabs;
     if (tab === 'dispatch') return head + dispatchHTML(o) + '</div>';
@@ -349,10 +362,10 @@
     var past = retail ? [] : SWP.customerOrders(c.id).filter(function (x) { return x.number !== o.number; });
     var others = SWP.findCustomers(d.q || '', c.id);
     return head('Контрагент') + '<div class="sheet-body dlg-body">' +
-      (retail ? '<p>Заказ пока записан на «Розничный покупатель»: клиент не подтвердил его в боте. Тег с сайта: <b>' + esc(o.siteTag) + '</b>.</p>'
+      (retail ? (o.manual ? '<p>Контрагент не выбран. Выберите существующего или создайте нового.</p>' : '<p>Заказ пока записан на «Розничный покупатель»: клиент не подтвердил его в боте. Тег с сайта: <b>' + esc(o.siteTag) + '</b>.</p>')
         : '<div class="field"><label for="c-name">Имя или тег в Telegram</label><input id="c-name" data-fk="c-name" value="' + esc(d.name != null ? d.name : c.name) + '" autocomplete="off" spellcheck="false"' + (d.error ? ' aria-invalid="true" aria-describedby="c-err"' : '') + '>' +
           (d.error ? '<p class="err" id="c-err" role="alert">' + esc(d.error) + '</p>' : '') +
-          '<p class="help">Telegram ID ' + c.tgId + ' не меняется, поэтому заказы и история цен останутся у этого контрагента.</p></div>' +
+          '<p class="help">' + (c.tgId ? 'Telegram ID ' + c.tgId + ' не меняется, поэтому заказы и история цен останутся у этого контрагента.' : 'У контрагента нет Telegram: бот не сможет отправить ему накладную и сообщения.') + '</p></div>' +
           '<button class="btn btn-primary" type="button" data-act="customer-save" data-fk="c-save">Сохранить имя</button>' +
           '<div><h3 class="h3">Предыдущие заказы</h3>' + (past.length ? '<ul class="hist">' + past.map(function (x) {
             return '<li>' + (x.open ? '<a href="#/order/' + x.number + '"><b>' + x.number + '</b></a>' : '<b>' + x.number + '</b>') + '<span>' + x.date.split('-').reverse().join('.') + '</span><span>' + esc(x.status) + '</span><span class="num">' + (x.total == null ? '' : money(x.total)) + '</span></li>';
@@ -362,24 +375,17 @@
       (ro ? '<p class="muted small">Заказ уже обработан, сменить контрагента нельзя.</p>'
         : '<div class="search">' + I.search + '<input type="search" id="c-q" data-fk="c-q" value="' + esc(d.q || '') + '" placeholder="Тег, имя или Telegram ID" aria-label="Поиск контрагента"></div>' +
           '<ul class="add-res">' + (others.length ? others.map(function (x) {
-            return '<li><span>' + esc(x.name) + '<small>' + esc(x.person) + ' · ID ' + x.tgId + '</small></span><button type="button" class="btn btn-sm" data-act="customer-pick" data-id="' + x.id + '" data-fk="pick-' + x.id + '">Выбрать</button></li>';
-          }).join('') : '<li><span class="muted">Никого не найдено.</span></li>') + '</ul>') + '</div></div>';
+            return '<li><span>' + esc(x.name) + '<small>' + esc(x.person) + ' · ' + (x.tgId ? 'ID ' + x.tgId : 'без Telegram') + '</small></span><button type="button" class="btn btn-sm" data-act="customer-pick" data-id="' + x.id + '" data-fk="pick-' + x.id + '">Выбрать</button></li>';
+          }).join('') : '<li><span class="muted">Никого не найдено.</span></li>') + '</ul>') + '</div>' +
+      (ro ? '' : '<form class="item-new" id="cust-form"><h3 class="h3">Новый контрагент</h3>' +
+        '<div class="field"><label for="cn-name">Имя или тег в Telegram</label><input id="cn-name" data-fk="cn-name" autocomplete="off" spellcheck="false" placeholder="@username или название"' + (d.newErr ? ' aria-invalid="true"' : '') + '>' +
+        (d.newErr ? '<p class="err" role="alert">' + esc(d.newErr) + '</p>' : '') + '</div>' +
+        '<div class="field"><label for="cn-person">Как зовут, необязательно</label><input id="cn-person" data-fk="cn-person" autocomplete="off"></div>' +
+        '<p class="help">У контрагента, созданного вручную, нет Telegram: бот ему ничего не отправит, накладную нужно передать самим.</p>' +
+        '<button class="btn" type="submit" data-fk="cn-add">Создать и записать заказ на него</button></form>') + '</div>';
   }
 
   /* ---------- chats (A-22, A-18) ---------- */
-  // Quick commands: a draft that starts with "/" lists the matching commands from settings.
-  function cmdsHTML() {
-    if (ui.chatDraft[0] !== '/' || /\s/.test(ui.chatDraft)) return '';
-    var list = SWP.findCommands(ui.chatDraft);
-    return '<div class="cmds" role="listbox" aria-label="Быстрые команды">' + (list.length ? list.map(function (c) {
-      return '<button type="button" role="option" class="cmd" data-act="cmd-pick" data-id="' + c.id + '"><b>/' + esc(c.cmd) + '</b><span>' + esc(c.text) + '</span></button>';
-    }).join('') : '<p class="muted small">Такой команды нет. Команды настраиваются в «Настройки → Настройка чатов».</p>') + '</div>';
-  }
-  function pickCommand(id) {
-    var c = SWP.settings().commands.filter(function (x) { return x.id === id; })[0]; if (!c) return;
-    ui.chatDraft = c.text; render();
-    var t = $('#ch-msg'); if (t) { t.focus(); t.setSelectionRange(t.value.length, t.value.length); }
-  }
   function chatsHTML(r) {
     var list = SWP.chatList(ui.chatQ, ui.chatFolder === 'marked'), cur = r.id && SWP.chatOf(r.id) ? r.id : null;
     var marked = SWP.chatList('', true).length;
@@ -387,7 +393,7 @@
       var c = SWP.customerById(ch.customer), last = ch.messages[ch.messages.length - 1];
       return '<li><a class="ch-item' + (cur === c.id ? ' is-on' : '') + '" href="#/chats/' + c.id + '"><span class="ch-top"><b>' + esc(c.name) + '</b><time>' + SWP.dateTime(last.at).slice(0, 5) + ' ' + SWP.dateTime(last.at).slice(11) + '</time></span>' +
         '<span class="ch-prev">' + (last.from === 'm' ? 'Вы: ' : '') + esc(last.text) + '</span>' +
-        '<span class="ch-flags">' + (ch.unread ? '<span class="pill is-act">ждёт ответа</span>' : '') + (ch.marked ? '<span class="pill is-warn">нужно проверить</span>' : '') + (c.blocked ? '<span class="pill">заблокирован</span>' : '') + '</span></a></li>';
+        '<span class="ch-flags">' + (ch.unread ? '<span class="pill is-act">ждёт ответа</span>' : '') + (SWP.chatHasTask(ch.customer) ? '<span class="pill is-warn">нужно проверить</span>' : '') + (c.blocked ? '<span class="pill">заблокирован</span>' : '') + '</span></a></li>';
     }).join('') + '</ul>' : '<p class="muted small">Чатов не найдено.</p>';
     var side = '<div class="ch-side"><div class="search">' + I.search + '<input type="search" id="ch-q" data-fk="ch-q" value="' + esc(ui.chatQ) + '" placeholder="Ник или тег клиента" aria-label="Поиск чата по нику или тегу"></div>' +
       '<div class="seg seg-2 ch-folders" role="group" aria-label="Папка">' + [['all', 'Все чаты'], ['marked', 'Нужно проверить' + (marked ? ' · ' + marked : '')]].map(function (f) {
@@ -397,18 +403,24 @@
     if (cur) {
       var ch = SWP.chatOf(cur), c = SWP.customerById(cur);
       thread = '<div class="ch-thread"><div class="ch-head"><a class="back" href="#/chats">' + I.chev + 'Чаты</a><b>' + esc(c.name) + '</b>' + (c.person ? '<span class="muted small">' + esc(c.person) + '</span>' : '') +
-        '<div class="ch-btns"><button type="button" class="ghost-btn' + (ch.marked ? ' is-on' : '') + '" data-act="chat-mark" data-fk="chat-mark" aria-pressed="' + ch.marked + '" aria-label="' + (ch.marked ? 'Убрать из папки «Нужно проверить»' : 'Отметить чат: нужно проверить') + '">' + I.flag + 'Нужно проверить</button>' +
+        '<div class="ch-btns">' +
         '<button type="button" class="ghost-btn" data-act="chat-task" data-fk="chat-task">' + I.tasks + 'Добавить задачу</button></div></div>' +
+        (function () { // open tasks of this chat, each with a link to its order
+          var ts = SWP.chatTasks(cur);
+          return ts.length ? '<ul class="ch-tasks">' + ts.map(function (t) {
+            return '<li>' + I.tasks + '<span><b>' + esc(t.title) + '</b>' + (t.n ? ' · <a href="#/order/' + t.n + '">заказ ' + t.n + '</a>' : '') + '</span></li>';
+          }).join('') + '</ul>' : '';
+        })() +
         '<ol class="ch-msgs" id="ch-msgs">' + ch.messages.map(function (m) {
           var files = (m.files || []).map(function (f) { return '<span class="pdf">' + I.file + esc(f) + '</span>'; }).join('');
-          return '<li class="m m-' + m.from + '"><p>' + (m.from === 'm' && !m.cmd ? '<b class="m-pre">Сообщение от менеджера:</b>' : '') + esc(m.text) + (files ? '<span class="m-files">' + files + '</span>' : '') + '</p><small>' + (m.from === 'bot' ? 'Бот автоматически · ' : m.from === 'm' ? (m.cmd ? 'Быстрая команда · ' : 'Менеджер · ') : '') + SWP.dateTime(m.at) +
+          return '<li class="m m-' + m.from + '"><p>' + (m.from === 'm' ? '<b class="m-pre">Сообщение от менеджера:</b>' : '') + esc(m.text) + (files ? '<span class="m-files">' + files + '</span>' : '') + '</p><small>' + (m.from === 'bot' ? 'Бот автоматически · ' : m.from === 'm' ? 'Менеджер · ' : '') + SWP.dateTime(m.at) +
             (m.order ? ' · ' + (SWP.order(m.order) ? '<a href="#/order/' + m.order + '">заказ ' + m.order + '</a>' : 'заказ ' + m.order) : '') + '</small></li>';
         }).join('') + '</ol>' +
         (c.blocked ? '<p class="alert alert-warn" style="margin:0">' + I.warn + '<span>Клиент заблокирован, бот ему не пишет. Разблокировать можно в <a href="#/settings">настройках</a>.</span></p>'
           : '<form class="ch-form" id="ch-form">' +
             (ui.chatFiles.length ? '<div class="ch-files">' + ui.chatFiles.map(function (f, i) { return '<span class="pdf">' + I.file + esc(f) + '<button type="button" class="chip-x" data-act="chat-file-x" data-i="' + i + '" aria-label="Убрать файл ' + esc(f) + '">' + I.close + '</button></span>'; }).join('') + '</div>' : '') +
             '<div class="ch-bar"><button type="button" class="icon-btn ch-clip" data-act="chat-file" data-fk="chat-file" aria-label="Прикрепить файл или фото"' + (ui.chatFiles.length >= 5 ? ' disabled' : '') + '>' + I.clip + '</button>' +
-            '<label class="sr-only" for="ch-msg">Сообщение клиенту</label><div class="ch-in">' + cmdsHTML() + '<textarea id="ch-msg" data-fk="ch-msg" rows="1" enterkeyhint="send" placeholder="Сообщение. / для команд">' + esc(ui.chatDraft) + '</textarea></div>' +
+            '<label class="sr-only" for="ch-msg">Сообщение клиенту</label><div class="ch-in"><textarea id="ch-msg" data-fk="ch-msg" rows="1" enterkeyhint="send" placeholder="Сообщение клиенту">' + esc(ui.chatDraft) + '</textarea></div>' +
             '<button class="ch-send" type="submit" data-fk="ch-send" aria-label="Отправить сообщение">' + I.send + '</button></div>' +
             '<p class="help">Enter отправляет, Shift+Enter переносит строку. Можно приложить до 5 файлов: накладную, фото.</p></form>') + '</div>';
     }
@@ -416,7 +428,7 @@
   }
 
   /* ---------- settings (A-16, A-18, A-20, A-1) ---------- */
-  var SET_TABS = [['site', 'Сайт'], ['pay', 'Белпочта'], ['texts', 'Настройка чатов'], ['block', 'Блокировка'], ['report', 'Упаковщики'], ['key', 'Приватность']];
+  var SET_TABS = [['site', 'Сайт'], ['pay', 'Белпочта'], ['block', 'Блокировка'], ['report', 'Упаковщики'], ['key', 'Приватность']];
   function settingsHTML() {
     var st = SWP.settings(), admin = SWP.session().level === 'admin', tab = ui.setTab, body = '';
     var tabs = '<div class="chips"><div class="chips-in" role="tablist">' + SET_TABS.map(function (t) {
@@ -441,30 +453,6 @@
         '<div class="field"><label class="sr-only" for="pay">Реквизиты</label><textarea id="pay" class="msg" data-set="payment" data-fk="pay">' + esc(st.payment) + '</textarea></div></section>' +
         '<section class="sec set"><h2 class="h2">Проверка отправок</h2><div class="ded"><label for="pc-time">Время ежедневной задачи «Проверить отправку почты»</label><span class="lp"><input id="pc-time" type="time" data-set="postCheckTime" data-fk="pc-time" value="' + esc(st.postCheckTime) + '"></span></div>' +
         '<p class="help">Задача приходит каждый день, с понедельника по воскресенье, если есть упакованные почтовые заказы.</p></section>';
-    } else if (tab === 'texts') {
-      var cmdErr = ui.setErr.indexOf('cmd:') === 0 ? ui.setErr.slice(4) : '', faqErr = ui.setErr.indexOf('faq:') === 0 ? ui.setErr.slice(4) : '';
-      var rowErr = ui.setErr && !cmdErr && !faqErr ? '<p class="err" role="alert">' + esc(ui.setErr) + '</p>' : '';
-      body = '<section class="sec set"><h2 class="h2">Быстрые команды</h2><p class="help">В чате наберите «/» и название: текст команды подставится в сообщение. Изменения сохраняются, когда вы выходите из поля.</p>' + rowErr +
-        '<ul class="items">' + st.commands.map(function (c) {
-          return '<li data-row="' + c.id + '"><div class="item-top"><span class="slash">/</span><input data-item="commands" data-f="cmd" data-fk="cm-' + c.id + '" value="' + esc(c.cmd) + '" aria-label="Название команды">' +
-            '<button type="button" class="btn btn-sm" data-act="item-x" data-k="commands" data-id="' + c.id + '" data-fk="cmx-' + c.id + '">Удалить</button></div>' +
-            '<textarea data-item="commands" data-f="text" data-fk="ct-' + c.id + '" aria-label="Текст команды /' + esc(c.cmd) + '">' + esc(c.text) + '</textarea></li>';
-        }).join('') + '</ul>' +
-        '<form class="item-new" id="cmd-form"><h3 class="h3">Новая команда</h3><div class="item-top"><span class="slash">/</span><input id="cmd-new" data-fk="cmd-new" placeholder="название" autocomplete="off" aria-label="Название новой команды"></div>' +
-        '<textarea id="cmd-text" data-fk="cmd-text" placeholder="Текст, который получит клиент" aria-label="Текст новой команды"></textarea>' + (cmdErr ? '<p class="err" role="alert">' + esc(cmdErr) + '</p>' : '') +
-        '<button class="btn" type="submit" data-fk="cmd-add">Добавить команду</button></form></section>' +
-        '<section class="sec set"><h2 class="h2">Ответы на частые вопросы</h2><p class="help">Клиент видит их в боте в разделе «Частые вопросы».</p>' +
-        '<ul class="items">' + st.faq.map(function (f) {
-          return '<li data-row="' + f.id + '"><div class="item-top"><input data-item="faq" data-f="q" data-fk="fq-' + f.id + '" value="' + esc(f.q) + '" aria-label="Вопрос">' +
-            '<button type="button" class="btn btn-sm" data-act="item-x" data-k="faq" data-id="' + f.id + '" data-fk="fx-' + f.id + '">Удалить</button></div>' +
-            '<textarea data-item="faq" data-f="a" data-fk="fa-' + f.id + '" aria-label="Ответ на вопрос: ' + esc(f.q) + '">' + esc(f.a) + '</textarea></li>';
-        }).join('') + '</ul>' +
-        '<form class="item-new" id="faq-form"><h3 class="h3">Новый вопрос</h3><div class="item-top"><input id="faq-q" data-fk="faq-q" placeholder="Вопрос" autocomplete="off" aria-label="Новый вопрос"></div>' +
-        '<textarea id="faq-a" data-fk="faq-a" placeholder="Ответ" aria-label="Ответ на новый вопрос"></textarea>' + (faqErr ? '<p class="err" role="alert">' + esc(faqErr) + '</p>' : '') +
-        '<button class="btn" type="submit" data-fk="faq-add">Добавить вопрос</button></form></section>' +
-        '<section class="sec set"><h2 class="h2">Предупреждения бота</h2><p class="help">Тексты, которые бот показывает при выборе доставки и дозаказа. Сохраняются, когда вы выходите из поля.</p>' +
-        '<p><span class="undecided">Не решено в PRD: полный перечень текстов бота (A-16)</span></p>' +
-        st.texts.map(function (t) { return '<div class="field"><label for="tx-' + t.id + '">' + esc(t.title) + '</label><textarea id="tx-' + t.id + '" data-text="' + t.id + '" data-fk="tx-' + t.id + '">' + esc(t.text) + '</textarea></div>'; }).join('') + '</section>';
     } else if (tab === 'block') {
       var blocked = SWP.findCustomers('', null).filter(function (c) { return c.blocked; });
       var found = ui.blockQ ? SWP.findCustomers(ui.blockQ, null).filter(function (c) { return !c.blocked; }) : [];
@@ -516,22 +504,26 @@
       }).join('') + '</tbody></table>' +
       '<div class="task-acts"><button class="btn" type="button" data-act="post-done" data-fk="post-done">Закончить на сегодня</button><span class="muted small">Неподтверждённые посылки перейдут в завтрашнюю задачу.</span></div></section>';
   }
-  function taskBtns(t) {
-    var chat = t.cid ? '<a class="btn btn-sm" href="#/chats/' + t.cid + '">Открыть чат</a>' : '';
+  function taskBtns(t) { // every task links to its order and to its chat when it has them
+    var order = t.n && SWP.order(t.n) ? '<a class="btn btn-sm" href="#/order/' + t.n + '">Открыть заказ</a>' : '';
+    var chat = t.cid && SWP.chatOf(t.cid) ? '<a class="btn btn-sm" href="#/chats/' + t.cid + '">Открыть чат</a>' : '';
     if (t.type === 'refund') {
-      if (t.stage === 'new') return '<button class="btn btn-primary btn-sm" type="button" data-act="refund-ask" data-id="' + t.rid + '" data-fk="ra-' + t.rid + '">Запросить реквизиты у клиента</button>';
+      if (t.stage === 'new') return chat + '<button class="btn btn-primary btn-sm" type="button" data-act="refund-ask" data-id="' + t.rid + '" data-fk="ra-' + t.rid + '">Запросить реквизиты у клиента</button>';
       var f = ui.refundFile[t.rid];
       return chat + (f ? '<span class="pdf">' + I.file + esc(f) + '<button type="button" class="chip-x" data-act="refund-file-x" data-id="' + t.rid + '" aria-label="Убрать чек">' + I.close + '</button></span>'
         : '<button class="btn btn-sm" type="button" data-act="refund-file" data-id="' + t.rid + '" data-fk="rfl-' + t.rid + '">' + I.clip + 'Приложить чек</button>') +
         '<button class="btn btn-primary btn-sm" type="button" data-act="refund-paid" data-id="' + t.rid + '" data-fk="rp-' + t.rid + '">Возврат оплачен</button>';
     }
-    if (t.type === 'custom') return chat + '<button class="btn btn-primary btn-sm" type="button" data-act="custom-done" data-id="' + t.uid + '" data-fk="cd-' + t.uid + '">Готово</button>';
-    return t.n ? '<a class="btn btn-sm" href="#/order/' + t.n + '">Открыть заказ</a>' : chat;
+    if (t.type === 'custom') return order + chat + '<button class="btn btn-primary btn-sm" type="button" data-act="custom-done" data-id="' + t.uid + '" data-fk="cd-' + t.uid + '">Готово</button>';
+    return order + chat;
   }
-  function taskDialogHTML(d, head) { // a manager's own task tied to a chat
+  function taskDialogHTML(d, head) { // a manager's own task tied to a chat and, when needed, to one of the customer's orders
+    var orders = SWP.customerOrders(d.cid).filter(function (x) { return x.open; }).map(function (x) { return { id: String(x.number), label: x.number + ' · ' + x.status }; });
     return head('Новая задача по чату') + '<form class="sheet-body dlg-body" id="task-form"><p class="muted small">Клиент: ' + esc(SWP.customerById(d.cid).name) + '. Задача появится в разделе «Задачи» у всех менеджеров.</p>' +
       '<div class="field"><label for="task-text">Что нужно сделать</label><textarea id="task-text" data-fk="task-text" placeholder="Например: перезвонить клиенту после 15:00"' + (d.error ? ' aria-invalid="true"' : '') + '></textarea>' +
-      (d.error ? '<p class="err" role="alert">' + esc(d.error) + '</p>' : '') + '</div></form>' +
+      (d.error ? '<p class="err" role="alert">' + esc(d.error) + '</p>' : '') + '</div>' +
+      (orders.length ? '<div class="field"><label for="task-order">Заказ, к которому относится задача</label><select id="task-order" data-fk="task-order">' + options(orders, '', 'Без заказа, только чат') + '</select>' +
+        '<p class="help">Заказ с задачей попадает в фильтр «Требует действия».</p></div>' : '') + '</form>' +
       '<div class="sheet-foot dlg-foot"><button class="btn btn-primary" type="submit" form="task-form" data-fk="task-save">Добавить задачу</button><button class="btn" type="button" data-act="dialog-close">Отмена</button></div>';
   }
   function tasksHTML() {
@@ -569,21 +561,25 @@
         }).join('');
       }).join('');
       var notes = [o.customerNote && 'Клиент: ' + o.customerNote, o.managerNote && 'Менеджер: ' + o.managerNote].filter(Boolean);
+      var dr = SWP.processDraft(d.n), joinOnly = dr.merge && !dr.shipped; // an unprocessed original gets the items, no message yet
       return head('Проверьте накладную ' + o.number) + '<div class="sheet-body dlg-body">' +
         (d.error ? '<div class="alert alert-err" role="alert">' + I.warn + '<div><b>Не получилось</b><p>' + esc(d.error) + '</p></div></div>' : '') +
-        '<p class="muted small">' + esc(who(o)) + ' · ' + esc(deliveryText(o)) + '. В МойСклад пока ничего не записано. При записи цены и состав попадут в заказ, а отгрузка создастся по нему автоматически.</p>' +
+        '<p class="muted small">' + esc(who(o)) + ' · ' + esc(deliveryText(o)) + '. В МойСклад пока ничего не записано.</p>' +
+        (dr.merge ? '<div class="notice is-warn">' + I.warn + '<span>Это дозаказ: его товары перейдут в заказ ' + dr.merge + (dr.shipped ? ', упаковщики получат одно новое сообщение вместо старого.' : ', который ещё не обработан. Обработайте потом заказ ' + dr.merge + '.') + '</span></div>' : '') +
         '<table class="pv"><tbody>' + rows + '</tbody></table>' + totalsHTML(o, c) +
         (notes.length ? '<p class="small">' + notes.map(esc).join('<br>') + '</p>' : '') +
         (c.warnings.length ? '<ul class="blockers">' + c.warnings.map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') + '</ul>' : '') + '</div>' +
-        '<div class="sheet-foot dlg-foot"><button class="btn btn-primary" type="button" data-act="write" data-fk="write">' + (d.error ? 'Повторить запись' : 'Записать в МойСклад') + '</button><button class="btn" type="button" data-act="dialog-close">Вернуться к правке</button></div>';
+        '<div class="sheet-foot dlg-foot"><button class="btn btn-primary" type="button" data-act="' + (joinOnly ? 'send' : 'to-message') + '" data-fk="next"' + (dr.error ? ' disabled' : '') + '>' + (joinOnly ? 'Объединить с заказом ' + dr.merge : 'Дальше: сообщение упаковщикам') + '</button><button class="btn" type="button" data-act="dialog-close">Вернуться к правке</button></div>';
     }
     var post = o.delivery.type === 'post';
     return head('Сообщение упаковщикам') + '<div class="sheet-body dlg-body">' +
-      '<div class="notice">' + I.check + '<span>Отгрузка создана. Накладная пока никому не отправлена.</span></div>' +
-      '<span class="pdf">' + I.file + 'Накладная ' + o.number + '.pdf</span>' +
+      (d.error ? '<div class="alert alert-err" role="alert">' + I.warn + '<div><b>Не получилось</b><p>' + esc(d.error) + '</p></div></div>' : '') +
+      '<p class="muted small">В МойСклад пока ничего не записано. Кнопка ниже запишет цены, создаст отгрузку и сразу отправит накладную.</p>' +
+      (d.noBot ? '<div class="notice is-warn">' + I.warn + '<span>У контрагента нет Telegram: бот ему ничего не отправит, передайте накладную сами.</span></div>' : '') +
+      '<span class="pdf">' + I.file + 'Накладная ' + (d.merge || o.number) + '.pdf</span>' +
       '<label class="sr-only" for="msg">Текст сообщения в группу упаковщиков</label><textarea class="msg" id="msg" data-fk="msg">' + esc(d.text) + '</textarea>' +
-      '<p class="help">' + (post ? 'Клиент получит накладную и реквизиты сразу. В группу упаковщиков это сообщение уйдёт, когда вы нажмёте «Подтвердить чек и отправить в группу» в карточке заказа.' : 'Одна кнопка отправляет накладную клиенту в бот и это сообщение с накладной в группу упаковщиков.') + ' Текст для группы можно поправить.</p></div>' +
-      '<div class="sheet-foot dlg-foot"><button class="btn btn-primary" type="button" data-act="send" data-fk="send">' + (post ? 'Отправить клиенту' : 'Отправить клиенту и в группу') + '</button><button class="btn" type="button" data-act="dialog-close">Позже</button></div>';
+      '<p class="help">' + (post ? 'Клиент получит накладную и реквизиты сразу. В группу упаковщиков это сообщение уйдёт, когда вы нажмёте «Подтвердить чек и отправить в группу» в карточке заказа.' : 'Клиент получит накладную в боте, а это сообщение с накладной уйдёт в группу упаковщиков.') + ' Текст для группы можно поправить.</p></div>' +
+      '<div class="sheet-foot dlg-foot"><button class="btn btn-primary" type="button" data-act="send" data-fk="send">' + (d.error ? 'Повторить' : post ? 'Записать и отправить клиенту' : 'Записать и отправить клиенту и в группу') + '</button><button class="btn" type="button" data-act="to-preview">Назад</button></div>';
   }
   function renderDialog() {
     var sheet = $('#sheet');
@@ -697,7 +693,8 @@
       var k = $('#key'); k.type = ui.showKey ? 'text' : 'password';
       b.innerHTML = ui.showKey ? I.eyeOff : I.eye; b.setAttribute('aria-pressed', ui.showKey); b.setAttribute('aria-label', ui.showKey ? 'Скрыть ключ' : 'Показать ключ');
     },
-    'filter-reset': function () { ui.filter = { q: '', status: '', delivery: '', from: '', to: '', sort: ui.filter.sort, dir: ui.filter.dir }; render(); },
+    'filter-reset': function () { ui.filter = { q: '', status: '', delivery: '', from: '', to: '', action: false, sort: ui.filter.sort, dir: ui.filter.dir }; render(); },
+    'filter-action': function () { ui.filter.action = !ui.filter.action; render(); },
     sort: function (b) {
       var k = b.getAttribute('data-s'), f = ui.filter;
       if (f.sort === k) f.dir = f.dir === 'asc' ? 'desc' : 'asc';
@@ -753,17 +750,14 @@
     },
     'conflict-reload': function () { var n = ui.dialog.n; SWP.clearRemoteChange(n); closeDialog(); toast('Загружена свежая версия заказа'); },
     'conflict-keep': function () { var n = ui.dialog.n; SWP.clearRemoteChange(n); startProcess(n); },
-    write: function () {
-      var d = ui.dialog, res = SWP.writeToMoySklad(d.n);
-      if (res.error) { d.error = res.error; return renderDialog(); }
-      if (res.queued) { closeDialog(); return toast('МойСклад недоступен: запись поставлена в очередь'); }
-      if (res.merged) { // the add-on was merged into its unpacked original (BR-5)
-        ui.dialog = null; ui.nextDialog = res.shipped ? { type: 'packing', n: res.merged, text: SWP.order(res.merged).packingDraft } : null; // opened after navigation
-        toast('Дозаказ ' + d.n + ' объединён с заказом ' + res.merged + (res.shipped ? '. Отправьте общую накладную' : '. Обработайте заказ ' + res.merged));
-        return go('#/order/' + res.merged);
-      }
-      ui.dialog = { type: 'packing', n: d.n, text: SWP.order(d.n).packingDraft }; render();
+    'to-message': function () {
+      var d = ui.dialog, dr = SWP.processDraft(d.n);
+      if (dr.error) { d.error = dr.error; return renderDialog(); }
+      ui.dialog = { type: 'packing', n: d.n, text: dr.text, merge: dr.merge, noBot: dr.noBot }; renderDialog();
     },
+    'to-preview': function () { ui.dialog = { type: 'preview', n: ui.dialog.n }; renderDialog(); },
+    'order-new': function () { var n = SWP.createOrder(); go('#/order/' + n); toast('Заказ ' + n + ' создан. Заполните его и обработайте'); },
+    'edit-on': function (b, n) { ui.editing = n; render(); },
     'receipt-ok': function (b, n) { if (SWP.approveReceipt(n)) toast('Чек подтверждён. Заказ ' + n + ' отправлен в группу упаковщиков'); },
     tab: function (b) { ui.tab = b.getAttribute('data-t'); render(); },
     'ask-pick': function (b) { var o = ui.dialog.options[+b.getAttribute('data-i')]; ui.dialog = null; renderDialog(); o.run(); },
@@ -788,11 +782,11 @@
     },
     'delete': function (b, n) { // A-18: allowed at every stage; what happens depends on the stage
       var o = SWP.order(n), st = o.status, text, done = 'Заказ ' + n + ' удалён. Из МойСклад он уйдёт через 10 секунд';
-      if (['processed', 'payment', 'packing'].indexOf(st) >= 0) text = 'Отгрузка и заказ в МойСклад удалятся, товар вернётся на остаток. Сообщение с накладной в группе упаковщиков удалится.';
+      if (['payment', 'packing'].indexOf(st) >= 0) text = 'Отгрузка и заказ в МойСклад удалятся, товар вернётся на остаток. Сообщение с накладной в группе упаковщиков удалится.';
       else if (st === 'packed') { text = 'Заказ уже упакован. Упаковщики получат «Разобрать» в ответ на сообщение заказа, отгрузка и заказ в МойСклад удалятся, товар вернётся на остаток.'; done = 'Заказ ' + n + ' удалён. Через 10 секунд упаковщики получат «Разобрать»'; }
-      else if (st === 'dispatched' || st === 'delivered') text = 'Заказ уже отправлен клиенту. Отгрузка и заказ в МойСклад удалятся, и товар вернётся на остаток, поэтому удаляйте только если посылка вернулась на склад.';
+      else if (st === 'dispatched') text = 'Заказ уже отправлен клиенту. Отгрузка и заказ в МойСклад удалятся, и товар вернётся на остаток, поэтому удаляйте только если посылка вернулась на склад.';
       else text = 'Заказ удалится из панели и из МойСклад, резерв товара снимется.';
-      if (o.delivery.type === 'post' && ['packing', 'packed', 'dispatched', 'delivered'].indexOf(st) >= 0) text += ' Заказ оплачен: появится задача вернуть клиенту деньги.';
+      if (o.delivery.type === 'post' && ['packing', 'packed', 'dispatched'].indexOf(st) >= 0) text += ' Заказ оплачен: появится задача вернуть клиенту деньги.';
       ask(n, 'Удалить заказ ' + n + '?', text + ' В течение 10 секунд удаление можно отменить.', [
         { label: 'Удалить заказ', kind: 'danger', run: function () {
           var gone = SWP.removeOrder(n); go('#/');
@@ -808,7 +802,6 @@
     'chat-file': function () { var names = ['Накладная 1124.pdf', 'Фото посылки.jpg', 'Квитанция.jpg', 'Прайс.pdf', 'Фото 2.jpg']; ui.chatDraft = $('#ch-msg').value; ui.chatFiles.push(names[ui.chatFiles.length]); render(); $('#ch-msg').focus(); },
     'chat-file-x': function (b) { ui.chatDraft = $('#ch-msg').value; ui.chatFiles.splice(+b.getAttribute('data-i'), 1); render(); },
     'chat-folder': function (b) { ui.chatFolder = b.getAttribute('data-f'); render(); },
-    'chat-mark': function () { SWP.toggleMark(route().id); },
     'set-tab': function (b) { ui.setTab = b.getAttribute('data-t'); ui.cityErr = ''; ui.setErr = ''; ui.newKey = ''; render(); },
     'city-x': function (b) {
       var c = b.getAttribute('data-c'), used = SWP.cityInUse(c);
@@ -842,14 +835,12 @@
     'to-packing': function (b, n) { if (SWP.backToPacking(n)) toast('Заказ ' + n + ' снова у упаковщиков, его можно править'); },
     'resend-edit': function (b, n) {
       ask(n, 'Отправить новую накладную?', 'Старое сообщение с накладной в группе упаковщиков удалится, вместо него уйдёт новое. Отгрузка в МойСклад обновится сама, клиент получит новую накладную.', [
-        { label: 'Сохранить и отправить', run: function () { if (SWP.resendEdited(n)) toast('Заказ ' + n + ' изменён. Новая накладная отправлена клиенту и в группу'); } }
+        { label: 'Сохранить и отправить', run: function () { if (SWP.resendEdited(n)) { ui.editing = null; render(); toast('Заказ ' + n + ' изменён. Новая накладная отправлена клиенту и в группу'); } } }
       ]);
     },
     'task-sort': function (b) { ui.taskSort = b.getAttribute('data-s'); render(); },
     'cities-toggle': function () { ui.citiesOpen = !ui.citiesOpen; render(); },
     'post-switch': function () { var off = !SWP.settings().postOff; SWP.setSetting('postOff', off); toast(off ? 'Белпочта отключена: клиенты не смогут её выбрать' : 'Белпочта включена'); },
-    'item-x': function (b) { SWP.removeItem(b.getAttribute('data-k'), b.getAttribute('data-id')); toast('Удалено'); },
-    'cmd-pick': function (b) { pickCommand(b.getAttribute('data-id')); },
     'refund-ask': function (b) { if (SWP.askRefundDetails(b.getAttribute('data-id'))) toast('Бот попросил клиента прислать реквизиты для возврата'); },
     'refund-file': function (b) { ui.refundFile[b.getAttribute('data-id')] = 'Чек возврата.jpg'; render(); },
     'refund-file-x': function (b) { delete ui.refundFile[b.getAttribute('data-id')]; render(); },
@@ -869,10 +860,16 @@
       if (!SWP.postList().length) ui.postOpen = false;
       render();
     },
-    'open-packing': function (b, n) { var o = SWP.order(n); ui.dialog = { type: 'packing', n: n, text: o.packingDraft || SWP.packingMessage(o) }; renderDialog(); },
-    send: function () {
-      var d = ui.dialog, o = SWP.order(d.n), post = o.delivery.type === 'post';
-      SWP.sendPacking(d.n, $('#msg').value); ui.dialog = null;
+    send: function () { // the single step that writes to MoySklad and sends the delivery note (A-11, A-12)
+      var d = ui.dialog, o = SWP.order(d.n), post = o.delivery.type === 'post', msg = $('#msg');
+      var res = SWP.processSend(d.n, msg ? msg.value : '');
+      if (res.error) { if (msg) d.text = msg.value; d.error = res.error; return renderDialog(); }
+      ui.dialog = null;
+      if (res.queued) { render(); return toast('МойСклад недоступен: запись поставлена в очередь, накладная пока не отправлена'); }
+      if (res.merged) {
+        toast('Дозаказ ' + d.n + ' объединён с заказом ' + res.merged + (res.shipped ? '. Новая накладная отправлена' : '. Теперь обработайте заказ ' + res.merged));
+        return go('#/order/' + res.merged);
+      }
       toast(post ? 'Накладная отправлена клиенту. Заказ ' + d.n + ' ждёт оплаты' : 'Накладная отправлена клиенту и в группу. Заказ ' + d.n + ' передан на упаковку');
       go('#/');
     },
@@ -892,24 +889,21 @@
     if (e.target.id === 'task-form') {
       e.preventDefault();
       var td = ui.dialog;
-      if (SWP.addCustomTask(td.cid, $('#task-text').value)) { ui.dialog = null; render(); toast('Задача добавлена в раздел «Задачи»'); }
+      if (SWP.addCustomTask(td.cid, $('#task-text').value, $('#task-order') ? $('#task-order').value : '')) { ui.dialog = null; render(); toast('Задача добавлена в раздел «Задачи»'); }
       else { td.error = 'Напишите, что нужно сделать'; renderDialog(); }
       return;
     }
     if (e.target.id === 'ch-form') {
       e.preventDefault();
       var sent = $('#ch-msg').value, files = ui.chatFiles; ui.chatDraft = ''; ui.chatFiles = [];
-      var how = SWP.sendChat(route().id, sent, files);
-      if (how) { toast(how === 'cmd' ? 'Быстрая команда отправлена клиенту без пометки' : 'Отправлено клиенту с пометкой «Сообщение от менеджера»'); scrollChat(); var again = $('#ch-msg'); if (again) again.focus(); }
+      if (SWP.sendChat(route().id, sent, files)) { toast('Отправлено клиенту с пометкой «Сообщение от менеджера»'); scrollChat(); var again = $('#ch-msg'); if (again) again.focus(); }
       return;
     }
-    if (e.target.id === 'cmd-form' || e.target.id === 'faq-form') {
+    if (e.target.id === 'cust-form') { // a new counterparty for this order (A-33)
       e.preventDefault();
-      var isCmd = e.target.id === 'cmd-form';
-      var rs = isCmd ? SWP.saveCommand(null, $('#cmd-new').value, $('#cmd-text').value) : SWP.saveFaq(null, $('#faq-q').value, $('#faq-a').value);
-      ui.setErr = rs.error ? (isCmd ? 'cmd:' : 'faq:') + rs.error : '';
-      if (rs.error) { var keep = isCmd ? [$('#cmd-new').value, $('#cmd-text').value] : [$('#faq-q').value, $('#faq-a').value]; render(); var ids = isCmd ? ['#cmd-new', '#cmd-text'] : ['#faq-q', '#faq-a']; $(ids[0]).value = keep[0]; $(ids[1]).value = keep[1]; }
-      else { render(); toast(isCmd ? 'Команда добавлена' : 'Вопрос добавлен в FAQ бота'); }
+      var cd = ui.dialog, made = SWP.createCustomer($('#cn-name').value, $('#cn-person').value);
+      if (made.error) { var kept = [$('#cn-name').value, $('#cn-person').value]; cd.newErr = made.error; renderDialog(); $('#cn-name').value = kept[0]; $('#cn-person').value = kept[1]; return; }
+      SWP.setOrderCustomer(cd.n, made.id); ui.dialog = null; render(); toast('Контрагент создан, заказ ' + cd.n + ' записан на него');
       return;
     }
     if (e.target.id === 'city-form') {
@@ -939,7 +933,7 @@
     if (t.id === 'b-q') { ui.blockQ = t.value; render(); }
     if (t.id === 'pay') SWP.setSetting('payment', t.value); // Belposhta switches off the moment the details become empty (S-15)
     if (t.id === 'ch-q') { ui.chatQ = t.value; render(); }
-    if (t.id === 'ch-msg') { var was = ui.chatDraft[0] === '/'; ui.chatDraft = t.value; if (was || t.value[0] === '/') render(); }
+    if (t.id === 'ch-msg') ui.chatDraft = t.value;
     if (t.id === 'c-q' && ui.dialog) { ui.dialog.q = t.value; ui.dialog.name = $('#c-name') ? $('#c-name').value : null; renderDialog(); }
   });
   // Other fields commit on change (blur or Enter), so typing a price is not interrupted.
@@ -948,13 +942,6 @@
     var t = e.target, n = route().n, num = function (v) { return String(v).replace(',', '.').trim(); };
     if (t.hasAttribute('data-filter')) { ui.filter[t.getAttribute('data-filter')] = t.value; return render(); }
     if (t.hasAttribute('data-rep')) { ui.rep[t.getAttribute('data-rep')] = t.value; return render(); }
-    if (t.hasAttribute('data-item')) { // a quick command or a FAQ entry edited in place
-      var row = t.closest('[data-row]'), kind = t.getAttribute('data-item'), val = function (k) { return row.querySelector('[data-f="' + k + '"]').value; };
-      var r2 = kind === 'commands' ? SWP.saveCommand(row.getAttribute('data-row'), val('cmd'), val('text')) : SWP.saveFaq(row.getAttribute('data-row'), val('q'), val('a'));
-      ui.setErr = r2.error || ''; render();
-      return toast(r2.error ? 'Не сохранено: ' + r2.error : 'Сохранено');
-    }
-    if (t.hasAttribute('data-text')) { SWP.setText(t.getAttribute('data-text'), t.value); return toast('Текст сохранён'); }
     if (t.hasAttribute('data-set')) {
       var sk = t.getAttribute('data-set');
       SWP.setSetting(sk, sk === 'autoDelete' ? Math.max(1, parseInt(t.value, 10) || 168) : sk === 'postCheckTime' ? t.value || '21:00' : t.value);
@@ -977,8 +964,7 @@
     if (e.key === 'Escape' && ui.menu) { ui.menu = null; render(); }
     if (e.key === 'Enter' && !e.shiftKey && e.target.id === 'ch-msg') { // Enter sends, Shift+Enter makes a new line
       e.preventDefault();
-      var first = $('.cmds .cmd');
-      if (first) pickCommand(first.getAttribute('data-id')); else if (e.target.value.trim() || ui.chatFiles.length) $('#ch-form').requestSubmit();
+      if (e.target.value.trim() || ui.chatFiles.length) $('#ch-form').requestSubmit();
       return;
     }
     var t = e.target;
@@ -1002,7 +988,7 @@
       requestAnimationFrame(function () { focusPrice(nextId); });
     } else if (e.key === 'Enter' && t.matches('.lp input, .stepper input')) t.blur();
   });
-  window.addEventListener('hashchange', function () { ui.chatDraft = ''; ui.chatFiles = []; ui.taskSort = 'old'; ui.setErr = ''; var rc = route(); if (rc.name === 'chats' && rc.id) SWP.readChat(rc.id); ui.tab = 'note'; ui.files = []; ui.addQ = ''; ui.menu = null; ui.trackErr = false; ui.dialog = ui.nextDialog || null; ui.nextDialog = null; render(); window.scrollTo(0, 0); });
+  window.addEventListener('hashchange', function () { ui.editing = null; ui.chatDraft = ''; ui.chatFiles = []; ui.taskSort = 'old'; ui.setErr = ''; var rc = route(); if (rc.name === 'chats' && rc.id) SWP.readChat(rc.id); ui.tab = 'note'; ui.files = []; ui.addQ = ''; ui.menu = null; ui.trackErr = false; ui.dialog = null; render(); window.scrollTo(0, 0); });
 
   SWP.on(render);
   render();

@@ -35,22 +35,22 @@
     ],
     // Bot conversations: c = customer, m = manager, bot = automated message.
     chats: [
-      { customer: 'c7', marked: false, unread: true, messages: [
+      { customer: 'c7', unread: true, messages: [
         { from: 'bot', at: '2026-10-08T16:21:00', order: 1117, text: 'Заказ 1117 принят. Способ доставки: Белпочта.' },
         { from: 'bot', at: '2026-10-08T17:40:00', order: 1117, text: 'Накладная и реквизиты для оплаты. К оплате 165 + 10 BYN.' },
         { from: 'c', at: '2026-10-09T09:12:00', order: 1117, text: 'Оплатила, чек отправила. Когда отправите?' } ] },
-      { customer: 'c2', marked: true, unread: true, messages: [
+      { customer: 'c2', unread: true, messages: [
         { from: 'c', at: '2026-10-07T14:02:00', order: 1115, text: 'Курьер не дозвонился, можно перенести на завтра?' },
         { from: 'm', at: '2026-10-07T14:10:00', order: 1115, text: 'Да, перенесли на завтра до обеда.' },
         { from: 'bot', at: '2026-10-10T09:16:00', order: 1123, text: 'Заказ 1123: укажите телефон для водителя маршрутки.' },
         { from: 'c', at: '2026-10-10T09:18:00', order: 1123, text: '+375 29 555-01-23, это номер брата, он заберёт.' } ] },
-      { customer: 'c1', marked: false, unread: false, messages: [
+      { customer: 'c1', unread: false, messages: [
         { from: 'bot', at: '2026-10-10T10:43:00', order: 1124, text: 'Заказ 1124 принят. Маршрутка в Гомель, водителю около 10 BYN сверх накладной.' },
         { from: 'c', at: '2026-10-10T10:45:00', order: 1124, text: 'Спасибо, жду накладную.' },
         { from: 'm', at: '2026-10-10T10:50:00', order: 1124, text: 'Обработаем в течение часа.' } ] },
-      { customer: 'c5', marked: false, unread: false, messages: [
+      { customer: 'c5', unread: false, messages: [
         { from: 'bot', at: '2026-10-09T17:06:00', order: 1120, text: 'Заказ 1120 принят. Маршрутка в Гродно.' } ] },
-      { customer: 'c3', marked: true, unread: false, messages: [
+      { customer: 'c3', unread: false, messages: [
         { from: 'c', at: '2026-10-08T10:30:00', order: 1116, text: 'В прошлый раз не доложили две позиции, проверьте в этот раз, пожалуйста.' },
         { from: 'm', at: '2026-10-08T10:41:00', order: 1116, text: 'Проверим отдельно, спасибо, что написали.' } ] }
     ],

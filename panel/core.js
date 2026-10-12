@@ -8,24 +8,21 @@
   'use strict';
   var C = window.SW_DATA, D = window.SWP_DATA;
   var TIERS = [10, 30, 50, 100];
+  var PANEL_TIERS = [10, 30, 50, 100, 200]; // the from-200 price type is offered to the manager only, never suggested (A-5, W-1)
   var SESSION_MS = 12 * 60 * 60 * 1000;
   var MUTE_MS = 5 * 60 * 1000;
   var MAX_TRIES = 3;
-  var KEY = 'swp-mock-v9';
+  var KEY = 'swp-mock-v13';
   var TRACK_RE = /^[A-Z]{2}\d{9}BY$/; // Belposhta tracking code: two letters, nine digits, BY (A-15)
 
   var STATUSES = [
     { id: 'new', label: 'Новый' },
-    { id: 'details', label: 'Ожидает данные', deferred: true },
     { id: 'phone', label: 'Ждёт согласования телефона' },
-    { id: 'accepted', label: 'Принят' },
-    { id: 'queue', label: 'В очереди менеджера', deferred: true },
-    { id: 'processed', label: 'Обработан' },
+    { id: 'accepted', label: 'Готов к обработке' },
     { id: 'payment', label: 'Ожидает оплаты' },
     { id: 'packing', label: 'Передан на упаковку' },
     { id: 'packed', label: 'Упакован' },
-    { id: 'dispatched', label: 'Отправлен' },
-    { id: 'delivered', label: 'Доставлен', deferred: true }
+    { id: 'dispatched', label: 'Отправлен' }
   ];
   // BR-3: surcharges stay outside the delivery note (INV-4).
   var DELIVERY = [
@@ -86,31 +83,14 @@
       settings: { // A-16
         cities: CITIES.slice(), autoDelete: 168,
         postOff: false, postCheckTime: '21:00', // Belposhta switch and the time of the daily dispatch task (A-31)
-        commands: [ // quick replies called with "/" in a chat
-          { id: 'k1', cmd: 'тег', text: 'Чтобы мы могли оформить заказ, добавьте себе имя пользователя в Telegram: Настройки → Изменить профиль → Имя пользователя. После этого напишите нам ещё раз.' },
-          { id: 'k2', cmd: 'оплата', text: 'Реквизиты для оплаты бот отправил вместе с накладной. После оплаты пришлите сюда чек фотографией или файлом.' },
-          { id: 'k3', cmd: 'сроки', text: 'Маршрутка идёт 1–2 дня, Белпочта 3–5 дней. В Гродно и Витебск маршрутки отправляются в понедельник, среду и пятницу.' }
-        ],
-        faq: [ // "Frequently asked questions" in the bot (C-21)
-          { id: 'f1', q: 'Какая минимальная сумма заказа?', a: 'Минимальный заказ 100 BYN и не меньше 5 штук.' },
-          { id: 'f2', q: 'Как оплатить заказ?', a: 'Маршрутка и доставка на адрес оплачиваются при получении. Белпочта только по предоплате, реквизиты пришлёт бот.' },
-          { id: 'f3', q: 'Можно ли добавить товар к заказу?', a: 'Да, в течение 24 часов после принятия заказа и до его отправки. Нажмите «Мои заказы» и выберите дозаказ.' }
-        ],
-        payment: 'Получатель: ИП Образец О. О.\nIBAN: BY00 XXXX 0000 0000 0000 0000 0000\nНазначение: оплата заказа, номер заказа',
-        texts: [
-          { id: 'minibus', title: 'Маршрутка в областной город', text: 'Водителю нужно будет отдать около 10 BYN сверх суммы накладной.' },
-          { id: 'minsk', title: 'Минск, маршрутка', text: 'Доплата за доставку 5 BYN. Укажите телефон, по которому водитель точно дозвонится.' },
-          { id: 'address', title: 'Доставка на адрес в Минске', text: 'Доплата за доставку 15 BYN, в том числе за МКАД.' },
-          { id: 'post', title: 'Белпочта', text: 'Срок доставки 3–5 дней. К оплате сумма накладной и 10 BYN за доставку. Отправим после подтверждения оплаты.' },
-          { id: 'addon', title: 'Дозаказ', text: 'Дозаказ можно положить в ту же посылку или отправить отдельной. Отдельная посылка оплачивается как новая доставка.' }
-        ]
+        payment: 'Получатель: ИП Образец О. О.\nIBAN: BY00 XXXX 0000 0000 0000 0000 0000\nНазначение: оплата заказа, номер заказа'
       },
       postCheck: { due: true }, // the daily 21:00 Belposhta dispatch check is waiting (A-31)
       flags: { failShipment: false, moyskladDown: false, strictStock: false }
     };
   }
   function load() {
-    try { var s = JSON.parse(localStorage.getItem(KEY)); if (s && s.orders && s.guard && s.customers && s.priceUndo && s.postCheck && s.settings && s.settings.commands && s.chats && s.refunds && s.custom) { state = s; return; } } catch (e) {}
+    try { var s = JSON.parse(localStorage.getItem(KEY)); if (s && s.orders && s.guard && s.customers && s.priceUndo && s.postCheck && s.settings && s.settings.postCheckTime && s.chats && s.refunds && s.custom) { state = s; return; } } catch (e) {}
     state = seed();
   }
   function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
@@ -171,16 +151,17 @@
   }
   function findCustomers(q, skip) {
     q = norm(q).replace(/^@/, '');
-    return state.customers.filter(function (c) { return c.id !== skip && c.id !== 'retail' && (!q || norm(c.name + ' ' + c.person + ' ' + c.tgId).indexOf(q) >= 0); });
+    return state.customers.filter(function (c) { return c.id !== skip && c.id !== 'retail' && (!q || norm(c.name + ' ' + c.person + ' ' + (c.tgId || '')).indexOf(q) >= 0); });
   }
   function status(id) { return STATUSES.filter(function (s) { return s.id === id; })[0]; }
   function delivery(id) { return DELIVERY.filter(function (d) { return d.id === id; })[0]; }
   // An order with the packers can still be edited; saving replaces the group message (A-32).
-  function editable(o) { return ['new', 'details', 'phone', 'accepted', 'queue', 'packing'].indexOf(o.status) >= 0; }
+  function editable(o) { return ['new', 'phone', 'accepted', 'packing'].indexOf(o.status) >= 0; }
   function customerPrice(o, lineId) { // A-6: line price from the customer's most recent order containing that line
     var h = customer(o).history.filter(function (x) { return x[0] === lineId; })[0];
     return h ? { price: h[1], order: h[2], date: h[3] } : null;
   }
+  function tierPrice(p, tier) { var v = p.prices[tier]; return v == null ? 0 : v; } // a missing price type shows as 0
   function qtyTier(q) { return q >= 100 ? 100 : q >= 50 ? 50 : q >= 30 ? 30 : 10; }
   function round5(n) { return Math.floor((n + 2.5) / 5) * 5; } // S-4: nearest 5 BYN, ties up
   function r2(n) { return Math.round(n * 100) / 100; }
@@ -215,7 +196,7 @@
       l.price = l.items.every(function (r) { return r.price === first; }) ? first : undefined; // undefined = mixed prices
       l.missing = l.items.some(function (r) { return r.price == null; });
       l.customer = customerPrice(o, l.id);
-      l.tiers = TIERS.map(function (t) { return { tier: t, price: l.items[0].product.prices[t] }; });
+      l.tiers = PANEL_TIERS.map(function (t) { return { tier: t, price: tierPrice(l.items[0].product, t) }; });
       rows = rows.concat(l.items);
     });
     var deduction = Math.max(0, +o.deduction || 0);
@@ -228,9 +209,13 @@
       surcharge: d.id === 'minsk-address' ? Math.max(0, +o.surcharge || 0) : 0, delivery: d, trackingBad: false, suggest: units > 0 && tierNow !== o.tier ? tierNow : null,
       hasHistory: lines.some(function (l) { return l.customer; }), blockers: [], warnings: [] };
 
-    if (o.status === 'new') res.blockers.push('Клиент ещё не подтвердил заказ в боте');
-    else if (o.status === 'phone' || (o.delivery.type === 'minsk-minibus' && !o.phoneApproved)) res.blockers.push('Телефон для доставки по Минску не согласован');
+    if (o.status === 'new') res.blockers.push(o.offered ? 'Клиент выбирает другой способ доставки в боте' : 'Клиент ещё не подтвердил заказ в боте');
+    else if (o.status === 'phone' || (o.delivery.type === 'minsk-minibus' && !o.phoneApproved && !o.manual)) res.blockers.push('Телефон для доставки по Минску не согласован');
     else if (!editable(o)) res.blockers.push('Заказ уже обработан');
+    if (o.manual && o.customer === 'retail') res.blockers.push('Не выбран контрагент');
+    var need = { minibus: [['city', 'город']], 'minsk-minibus': [['phone', 'телефон для водителя']], 'minsk-address': [['address', 'адрес']],
+      post: [['fullName', 'ФИО получателя'], ['postcode', 'индекс'], ['address', 'адрес']] }[o.delivery.type];
+    need.forEach(function (f) { if (!String(o.delivery[f[0]] || '').trim()) res.blockers.push('Не заполнена доставка: ' + f[1]); });
     if (!rows.length) res.blockers.push('В накладной нет товаров');
     lines.forEach(function (l) { if (l.missing) res.blockers.push('Нет цены: ' + l.name); });
     if (rows.length && !noPrice && after < 0) res.blockers.push('Скидка больше суммы заказа');
@@ -270,7 +255,7 @@
   }
   function applyTier(n, tier, lineId) { // A-5: only on the manager's explicit action
     priced(n, function (o) {
-      o.items.forEach(function (it) { var p = products[it.id]; if (!lineId || p.folderId === lineId) it.price = p.prices[tier]; });
+      o.items.forEach(function (it) { var p = products[it.id]; if (!lineId || p.folderId === lineId) it.price = tierPrice(p, tier); });
       if (!lineId) o.tier = tier;
     });
   }
@@ -324,39 +309,77 @@
   }
 
   /* ---------- processing (A-11, A-12, S-3, INV-1, INV-8) ---------- */
-  function writeToMoySklad(n) { // step 1: prices, sorting, shipment, PDF
+  // The preview shows the packing message before anything is written. For an add-on that will be merged
+  // into a shipped original, the message is the one of the combined order.
+  function mergeItems(target, o) { // prices of the added items were just confirmed by the manager in the add-on
+    o.items.forEach(function (it) {
+      var same = target.items.filter(function (x) { return x.id === it.id; })[0];
+      if (same) same.qty += it.qty; else target.items.push({ id: it.id, qty: it.qty, price: it.price });
+    });
+    if (o.customerNote) target.customerNote = (target.customerNote ? target.customerNote + ' ' : '') + o.customerNote;
+    if (o.managerNote) target.managerNote = (target.managerNote ? target.managerNote + ' ' : '') + o.managerNote;
+  }
+  function isShipped(o) { return ['payment', 'packing'].indexOf(o.status) >= 0; }
+  function processDraft(n) {
+    var o = order(n), c = compute(o);
+    if (c.blockers.length || c.trackingBad) return { error: c.blockers[0] || 'Трек-код Белпочты введён неверно' };
+    var orig = mergeTarget(o);
+    if (!orig) return { text: packingMessage(o, c), noBot: !customer(o).tgId };
+    var combined = JSON.parse(JSON.stringify(orig)); mergeItems(combined, o);
+    return { merge: orig.number, shipped: isShipped(orig), text: packingMessage(combined), noBot: !customer(o).tgId };
+  }
+  // One confirmation writes prices and the shipment to MoySklad and sends the delivery note to the customer
+  // and the message to the packing group (A-11, A-12). Nothing is sent if the write fails.
+  function processSend(n, text) {
     var o = order(n), c = compute(o);
     if (c.blockers.length || c.trackingBad) return { error: c.blockers[0] || 'Трек-код Белпочты введён неверно' };
     if (state.flags.moyskladDown) { o.pendingRetry = true; emit(); return { queued: true }; }
-    if (state.flags.failShipment) { state.flags.failShipment = false; emit(); return { error: 'МойСклад не создал отгрузку. Изменения отменены, сообщение упаковщикам не отправлено.' }; }
+    if (state.flags.failShipment) { state.flags.failShipment = false; emit(); return { error: 'МойСклад не создал отгрузку. Изменения отменены, накладная никому не отправлена.' }; }
     o.pendingRetry = false; o.remoteChanged = false;
     var orig = mergeTarget(o);
-    if (orig) { var shipped = mergeInto(o, orig); emit(); return { ok: true, merged: orig.number, shipped: shipped }; }
-    o.status = 'processed'; o.packingDraft = packingMessage(o, c);
-    emit(); return { ok: true };
-  }
-  function sendPacking(n, text) { // step 2: one confirmation sends the PDF to the customer and the message to the group (A-12)
-    var o = order(n); if (!o || o.status !== 'processed') return;
+    if (orig) {
+      var shipped = isShipped(orig);
+      mergeItems(orig, o); orig.merged = o.number; orig.dirty = false;
+      if (shipped) orig.packingText = text; // the old shipment and group message are replaced
+      state.orders = state.orders.filter(function (x) { return x !== o; });
+      emit(); return { ok: true, merged: orig.number, shipped: shipped };
+    }
     o.packingText = text;
     o.status = o.delivery.type === 'post' ? 'payment' : 'packing'; // BR-6: Belposhta waits for the receipt
-    emit();
+    emit(); return { ok: true };
+  }
+  // A-33: an order the manager composes by hand starts ready for processing, with nothing filled in.
+  function createOrder() {
+    var n = state.orders.reduce(function (m, o) { return Math.max(m, o.number); }, 0) + 1;
+    state.orders.push({ number: n, receivedAt: D.now, customer: 'retail', siteTag: '', kind: 'main', original: null, status: 'accepted', tier: 10,
+      delivery: { type: 'minibus', city: '' }, items: [], deduction: 0, customerNote: '', managerNote: '', tracking: '', surcharge: 15,
+      phoneApproved: false, packingText: '', remoteChanged: false, pendingRetry: false, manual: true });
+    emit(); return n;
+  }
+  function createCustomer(name, person) { // a counterparty entered by hand has no Telegram link, so the bot cannot write to them
+    name = String(name || '').trim(); person = String(person || '').trim();
+    if (!name) return { error: 'Укажите имя или тег контрагента' };
+    if (/^@/.test(name) && !/^@[A-Za-z0-9_]{5,32}$/.test(name)) return { error: 'Тег в формате @username: латиница, цифры и «_», от 5 символов' };
+    if (state.customers.some(function (x) { return norm(x.name) === norm(name); })) return { error: 'Контрагент с таким именем уже есть, выберите его из списка' };
+    var c = { id: 'm' + Date.now(), name: name, person: person, tgId: null, history: [] };
+    state.customers.push(c); emit(); return { ok: true, id: c.id };
   }
 
   /* ---------- order actions (A-13, A-14, A-15, A-17, A-18, A-23, A-26, A-27) ---------- */
   function approvePhone(n) { var o = order(n); if (!o || o.status !== 'phone') return; o.status = 'accepted'; o.phoneApproved = true; emit(); }
   // "Offer another method" restarts only the delivery choice in the bot (A-14).
-  function offerOtherDelivery(n, type) { var o = order(n); if (!o) return; o.status = 'details'; o.offered = type; o.phoneApproved = false; emit(); }
+  function offerOtherDelivery(n, type) { var o = order(n); if (!o) return; o.status = 'new'; o.offered = type; o.phoneApproved = false; emit(); } // back to "New": the order waits for the customer again
   function setBlocked(id, on) { var c = customerById(id); if (c && c.id !== 'retail') { c.blocked = !!on; emit(); } }
   function receiptToMinibus(n) { // rejected receipt, the customer switches to a minibus (AJ-3)
     var o = order(n); if (!o || o.status !== 'payment') return;
     o.delivery.type = 'minibus'; o.tracking = ''; o.status = 'accepted'; emit();
   }
-  function canReturn(o) { return ['processed', 'payment', 'packing'].indexOf(o.status) >= 0; }
+  function canReturn(o) { return ['payment', 'packing'].indexOf(o.status) >= 0; }
   function returnForEditing(n) { var o = order(n); if (!o || !canReturn(o)) return false; o.status = 'accepted'; o.packingText = ''; o.changedInMs = false; emit(); return true; }
   // BR-10: Belposhta is prepaid, so deleting an order after the receipt was approved leaves a refund to make.
   function removeOrder(n) {
     var o = order(n); if (!o) return null;
-    if (o.delivery.type === 'post' && ['packing', 'packed', 'dispatched', 'delivered'].indexOf(o.status) >= 0) {
+    if (o.delivery.type === 'post' && ['packing', 'packed', 'dispatched'].indexOf(o.status) >= 0) {
       state.refunds.push({ id: 'r' + o.number, n: o.number, cid: o.customer, who: customer(o).name, amount: compute(o).total + 10, at: D.now, stage: 'new' });
     }
     state.orders = state.orders.filter(function (x) { return x.number !== +n; }); emit(); return o;
@@ -367,7 +390,7 @@
   }
   function botSay(cid, text, files) { // an automated message in the customer's chat
     var ch = chatOf(cid);
-    if (!ch) { ch = { customer: cid, marked: false, unread: false, messages: [] }; state.chats.push(ch); }
+    if (!ch) { ch = { customer: cid, unread: false, messages: [] }; state.chats.push(ch); }
     ch.messages.push({ from: 'bot', at: D.now, text: text, files: files || [] });
   }
   // A refund has two steps: ask the customer for payment details, then mark it paid (a receipt is optional).
@@ -382,14 +405,14 @@
     botSay(r.cid, 'Возврат ' + money(r.amount) + ' по заказу ' + r.n + ' отправлен.', file ? [file] : []);
     state.refunds = state.refunds.filter(function (x) { return x !== r; }); emit(); return true;
   }
-  function addCustomTask(cid, text) {
+  function addCustomTask(cid, text, n) { // n: optional order of the same customer the task is about
     text = String(text || '').trim(); if (!text || !customerById(cid)) return false;
-    state.custom.push({ id: 'u' + Date.now(), cid: cid, text: text, at: D.now }); emit(); return true;
+    state.custom.push({ id: 'u' + Date.now(), cid: cid, n: +n || null, text: text, at: D.now }); emit(); return true;
   }
   function closeCustomTask(id) { state.custom = state.custom.filter(function (t) { return t.id !== id; }); emit(); }
   // A-21: an add-on names its original; the system picks the customer's latest undispatched order.
   function addonTargets(o) {
-    return state.orders.filter(function (x) { return x !== o && x.customer === o.customer && x.customer !== 'retail' && x.kind !== 'addon' && ['dispatched', 'delivered'].indexOf(x.status) < 0; })
+    return state.orders.filter(function (x) { return x !== o && x.customer === o.customer && x.customer !== 'retail' && x.kind !== 'addon' && x.status !== 'dispatched'; })
       .sort(function (a, b) { return a.receivedAt < b.receivedAt ? 1 : -1; });
   }
   function setKind(n, kind) {
@@ -412,22 +435,9 @@
   // A packed original is never reopened, and a Belposhta original with an approved receipt keeps its own document.
   function mergeTarget(o) {
     var orig = o.kind === 'addon' && o.original ? order(o.original) : null;
-    if (!orig || ['accepted', 'queue', 'processed', 'payment', 'packing'].indexOf(orig.status) < 0) return null;
+    if (!orig || ['accepted', 'payment', 'packing'].indexOf(orig.status) < 0) return null;
     if (orig.delivery.type === 'post' && orig.status === 'packing') return null;
     return orig;
-  }
-  function mergeInto(o, orig) { // prices of the added items were just confirmed by the manager in the add-on
-    o.items.forEach(function (it) {
-      var same = orig.items.filter(function (x) { return x.id === it.id; })[0];
-      if (same) same.qty += it.qty; else orig.items.push({ id: it.id, qty: it.qty, price: it.price });
-    });
-    if (o.customerNote) orig.customerNote = (orig.customerNote ? orig.customerNote + ' ' : '') + o.customerNote;
-    if (o.managerNote) orig.managerNote = (orig.managerNote ? orig.managerNote + ' ' : '') + o.managerNote;
-    var shipped = ['processed', 'payment', 'packing'].indexOf(orig.status) >= 0; // the old shipment and group message are replaced
-    orig.merged = o.number; orig.packingText = ''; orig.dirty = false;
-    if (shipped) { orig.status = 'processed'; orig.packingDraft = packingMessage(orig); }
-    state.orders = state.orders.filter(function (x) { return x !== o; });
-    return shipped;
   }
   function sendDispatch(n, text) { var o = order(n); if (!o || ['packing', 'packed'].indexOf(o.status) < 0) return false; o.dispatchText = text; o.status = 'dispatched'; emit(); return true; }
   function setChangedInMs(n, on) { var o = order(n); if (o) { o.changedInMs = !!on; emit(); } }
@@ -450,25 +460,25 @@
   function closePostCheck() { state.postCheck.due = false; emit(); } // unconfirmed parcels return in tomorrow's task
   function openPostCheck() { state.postCheck.due = true; emit(); }
   // Tasks are derived from order state, so each one closes itself when its action is done anywhere in the panel.
+  // A task carries both links where they exist: n is its order, cid is the customer's chat (A-28).
   function tasks(level) {
     var out = [];
     if (state.postCheck.due && postList().length) out.push({ type: 'post-check', count: postList().length });
     state.orders.slice().sort(function (a, b) { return a.receivedAt < b.receivedAt ? -1 : 1; }).forEach(function (o) {
       var t = o.status === 'payment' ? ['receipt', 'Проверить чек об оплате', 'Белпочта: без подтверждения чека заказ не уйдёт на упаковку']
         : o.status === 'phone' ? ['phone', 'Согласовать телефон', 'Минск: без согласования заказ нельзя обработать']
-        : o.status === 'processed' ? ['send', 'Отправить накладную', 'Отгрузка создана, накладная не отправлена клиенту и упаковщикам']
         : o.pendingRetry ? ['retry', 'МойСклад не ответил', 'Запись заказа стоит в очереди на повтор'] : null;
-      if (t) out.push({ type: t[0], title: t[1], text: t[2], n: o.number, who: customer(o).name, since: o.receivedAt, when: o.receivedAt });
+      if (t) out.push({ type: t[0], title: t[1], text: t[2], n: o.number, cid: chatOf(o.customer) ? o.customer : null, who: customer(o).name, since: o.receivedAt, when: o.receivedAt });
     });
     state.refunds.forEach(function (r) {
       out.push({ type: 'refund', title: 'Вернуть клиенту деньги', text: 'Заказ ' + r.n + ' удалён после оплаты. К возврату ' + money(r.amount) + (r.stage === 'asked' ? '. Реквизиты запрошены в чате' : ''),
         rid: r.id, stage: r.stage, cid: r.cid, who: customerById(r.cid).name, since: r.at, when: r.at });
     });
-    state.custom.forEach(function (t) { out.push({ type: 'custom', title: t.text, text: 'Задача из чата', uid: t.id, cid: t.cid, who: customerById(t.cid).name, since: t.at, when: t.at }); });
+    state.custom.forEach(function (t) { out.push({ type: 'custom', title: t.text, text: 'Задача из чата', uid: t.id, cid: t.cid, n: t.n && order(t.n) ? t.n : null, who: customerById(t.cid).name, since: t.at, when: t.at }); });
     state.chats.forEach(function (ch) {
       if (!ch.unread) return;
       var last = ch.messages[ch.messages.length - 1];
-      out.push({ type: 'chat', reply: true, title: 'Ответить клиенту', text: last.text, cid: ch.customer, who: customerById(ch.customer).name, since: last.at, when: last.at });
+      out.push({ type: 'chat', reply: true, title: 'Ответить клиенту', text: last.text, cid: ch.customer, n: last.order && order(last.order) ? last.order : null, who: customerById(ch.customer).name, since: last.at, when: last.at });
     });
     if (level === 'admin') state.security.forEach(function (x) { out.push({ type: 'security', title: x.text, text: 'Безопасность входа. Видит только супер-админ', at: x.at, when: new Date(x.at).toISOString() }); });
     return out;
@@ -476,22 +486,22 @@
 
   /* ---------- chats (A-22, A-18) ---------- */
   function chatOf(id) { return state.chats.filter(function (c) { return c.customer === id; })[0] || null; }
+  // A chat needs checking exactly while a task hangs on it: an unanswered message, a refund, or a manager's own task (A-22).
+  function chatHasTask(cid) { return tasks('manager').some(function (t) { return t.cid === cid; }); }
+  function chatTasks(cid) { return tasks('manager').filter(function (t) { return t.cid === cid; }); }
   function chatList(q, onlyMarked) {
     q = norm(q || '').replace(/^@/, '');
     return state.chats.filter(function (ch) {
       var c = customerById(ch.customer);
-      return (!onlyMarked || ch.marked) && (!q || norm(c.name + ' ' + c.person).indexOf(q) >= 0);
+      return (!onlyMarked || chatHasTask(ch.customer)) && (!q || norm(c.name + ' ' + c.person).indexOf(q) >= 0);
     }).sort(function (a, b) { return a.messages[a.messages.length - 1].at < b.messages[b.messages.length - 1].at ? 1 : -1; });
   }
   function readChat(id) { var ch = chatOf(id); if (ch && ch.unread) { ch.unread = false; save(); } }
   function sendChat(id, text, files) { // files: names of attached documents or photos, sent through the bot with the text
     var ch = chatOf(id); text = String(text || '').trim(); files = (files || []).slice(0, 5);
     if (!ch || (!text && !files.length) || customerById(id).blocked) return false;
-    // An unedited quick command goes out as plain bot text; anything typed by the manager gets the manager prefix (A-22).
-    var cmd = !!text && state.settings.commands.some(function (c) { return c.text.trim() === text; });
-    ch.messages.push({ from: 'm', at: D.now, text: text, cmd: cmd, files: files }); ch.unread = false; emit(); return cmd ? 'cmd' : 'text';
+    ch.messages.push({ from: 'm', at: D.now, text: text, files: files }); ch.unread = false; emit(); return true;
   }
-  function toggleMark(id) { var ch = chatOf(id); if (ch) { ch.marked = !ch.marked; emit(); } }
 
   /* ---------- settings (A-16, A-1, A-20) ---------- */
   function setSetting(k, v) { state.settings[k] = v; emit(); }
@@ -504,28 +514,6 @@
   }
   function removeCity(name) { state.settings.cities = state.settings.cities.filter(function (c) { return c !== name; }); emit(); }
   function cityInUse(name) { return state.orders.filter(function (o) { return o.delivery.type === 'minibus' && o.delivery.city === name && o.status !== 'dispatched'; }).length; }
-  function saveItem(list, id, fields) { // shared by quick commands and FAQ entries
-    var it = id ? list.filter(function (x) { return x.id === id; })[0] : null;
-    if (!it) { it = { id: 'n' + Date.now() + Math.random().toString(36).slice(2, 6) }; list.push(it); }
-    Object.keys(fields).forEach(function (k) { it[k] = fields[k]; });
-    emit();
-  }
-  function cmdName(v) { return String(v || '').trim().replace(/^\/+/, '').toLowerCase(); }
-  function saveCommand(id, cmd, text) {
-    cmd = cmdName(cmd); text = String(text || '').trim();
-    if (!/^[a-zа-яё0-9_]{2,20}$/.test(cmd)) return { error: 'Команда: от 2 до 20 букв или цифр без пробелов, например тег' };
-    if (!text) return { error: 'Введите текст сообщения для команды' };
-    if (state.settings.commands.some(function (c) { return c.id !== id && c.cmd === cmd; })) return { error: 'Команда /' + cmd + ' уже есть' };
-    saveItem(state.settings.commands, id, { cmd: cmd, text: text }); return { ok: true };
-  }
-  function saveFaq(id, q, a) {
-    q = String(q || '').trim(); a = String(a || '').trim();
-    if (!q || !a) return { error: 'Заполните и вопрос, и ответ' };
-    saveItem(state.settings.faq, id, { q: q, a: a }); return { ok: true };
-  }
-  function removeItem(key, id) { state.settings[key] = state.settings[key].filter(function (x) { return x.id !== id; }); emit(); }
-  function findCommands(q) { q = cmdName(q); return state.settings.commands.filter(function (c) { return c.cmd.indexOf(q) === 0; }); }
-  function setText(id, text) { state.settings.texts.forEach(function (t) { if (t.id === id) t.text = text; }); emit(); }
   // A-1: keys are generated, never typed; a new key ends every ordinary-manager session.
   function newManagerKey() {
     var abc = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789', buf = new Uint32Array(20), out = '';
@@ -536,6 +524,11 @@
   function packerReport() { return D.packers.slice(); }
 
   /* ---------- queue (A-2) ---------- */
+  // "Requires action": a task is open on the order, including a packed Belposhta parcel waiting in the daily check.
+  function orderNeedsAction(o) {
+    if (tasks('manager').some(function (t) { return t.n === o.number; })) return true;
+    return state.postCheck.due && o.delivery.type === 'post' && o.status === 'packed';
+  }
   function queue(f) {
     f = f || {};
     var q = norm(f.q || '');
@@ -544,6 +537,7 @@
       if (q && String(o.number).indexOf(q) < 0 && norm(c.name + ' ' + c.person + ' ' + o.siteTag).indexOf(q.replace(/^@/, '')) < 0) return false;
       if (f.status && o.status !== f.status) return false;
       if (f.delivery && o.delivery.type !== f.delivery) return false;
+      if (f.action && !orderNeedsAction(o)) return false;
       var day = o.receivedAt.slice(0, 10);
       if (f.from && day < f.from) return false;
       if (f.to && day > f.to) return false;
@@ -584,14 +578,14 @@
     setLinePrice: setLinePrice, applyTier: applyTier, applyCustomerPrice: applyCustomerPrice, setQty: setQty, addItem: addItem,
     restoreItem: restoreItem, patchOrder: patchOrder, setDelivery: setDelivery, setDeliveryField: setDeliveryField,
     searchProducts: searchProducts, lineName: lineName, flavor: flavor, product: function (id) { return products[id]; },
-    packingMessage: packingMessage, writeToMoySklad: writeToMoySklad, sendPacking: sendPacking, approveReceipt: approveReceipt,
+    packingMessage: packingMessage, processDraft: processDraft, processSend: processSend, createOrder: createOrder, createCustomer: createCustomer, approveReceipt: approveReceipt,
     approvePhone: approvePhone, offerOtherDelivery: offerOtherDelivery, setBlocked: setBlocked, receiptToMinibus: receiptToMinibus,
     canReturn: canReturn, returnForEditing: returnForEditing, removeOrder: removeOrder, restoreOrder: restoreOrder, askRefundDetails: askRefundDetails, payRefund: payRefund, addCustomTask: addCustomTask, closeCustomTask: closeCustomTask,
     addonTargets: addonTargets, setKind: setKind, setOriginal: setOriginal, backToPacking: backToPacking, resendEdited: resendEdited,
-    saveCommand: saveCommand, saveFaq: saveFaq, removeItem: removeItem, findCommands: findCommands, mergeTarget: mergeTarget,
+    mergeTarget: mergeTarget,
     sendDispatch: sendDispatch, setChangedInMs: setChangedInMs,
-    chatOf: chatOf, chatList: chatList, readChat: readChat, sendChat: sendChat, toggleMark: toggleMark,
-    settings: function () { return state.settings; }, setSetting: setSetting, addCity: addCity, removeCity: removeCity, cityInUse: cityInUse, setText: setText,
+    chatOf: chatOf, chatList: chatList, readChat: readChat, sendChat: sendChat, chatHasTask: chatHasTask, chatTasks: chatTasks, orderNeedsAction: orderNeedsAction,
+    settings: function () { return state.settings; }, setSetting: setSetting, addCity: addCity, removeCity: removeCity, cityInUse: cityInUse,
     newManagerKey: newManagerKey, packerReport: packerReport,
     tasks: tasks, postList: postList, confirmDispatch: confirmDispatch, revertDispatch: revertDispatch, canRevertDispatch: canRevertDispatch, closePostCheck: closePostCheck, openPostCheck: openPostCheck,
     markRemoteChange: function (n) { var o = order(n); if (o) { o.remoteChanged = true; emit(); } },
