@@ -12,7 +12,7 @@
   var SESSION_MS = 12 * 60 * 60 * 1000;
   var MUTE_MS = 5 * 60 * 1000;
   var MAX_TRIES = 3;
-  var KEY = 'swp-mock-v15';
+  var KEY = 'swp-mock-v16';
   var TRACK_RE = /^[A-Z]{2}\d{9}BY$/; // Belposhta tracking code: two letters, nine digits, BY (A-15)
 
   var STATUSES = [
@@ -68,7 +68,8 @@
         });
         return { number: o.number, receivedAt: o.receivedAt, customer: o.customer, siteTag: o.siteTag || '', kind: o.kind, original: o.original || null,
           status: o.status, tier: o.tier, delivery: JSON.parse(JSON.stringify(o.delivery)), items: items, deduction: 0,
-          customerNote: o.customerNote || '', managerNote: '', tracking: o.tracking || '', surcharge: 15, phoneApproved: o.status !== 'phone' && o.delivery.type === 'minibus' && o.delivery.city === MINSK,
+          customerNote: o.customerNote || '', managerNote: '', tracking: o.tracking || '', surcharge: 15,
+          paid: o.delivery.type === 'post' && ['packing', 'packed', 'dispatched'].indexOf(o.status) >= 0, // Belposhta receipt approved phoneApproved: o.status !== 'phone' && o.delivery.type === 'minibus' && o.delivery.city === MINSK,
           packingText: '', remoteChanged: false, pendingRetry: false };
       }),
       customers: JSON.parse(JSON.stringify(D.customers)),
@@ -221,8 +222,8 @@
     if (!rows.length) res.blockers.push('В накладной нет товаров');
     lines.forEach(function (l) { if (l.missing) res.blockers.push('Нет цены: ' + l.name); });
     if (rows.length && !noPrice && after < 0) res.blockers.push('Скидка больше суммы заказа');
-    // A wrong tracking code is reported on "Process" itself, so it is kept apart from the other blockers.
-    if (d.id === 'post' && !TRACK_RE.test(String(o.tracking).trim())) res.trackingBad = true;
+    // BR-6: the tracking code is entered only after the receipt is approved, right before sending to packing.
+    if (d.id === 'post' && o.status === 'payment' && o.paid && !TRACK_RE.test(String(o.tracking).trim())) res.trackingBad = true;
     rows.forEach(function (r) {
       if (!r.short) return;
       var text = 'На складе ' + r.product.stock + ' шт, в заказе ' + r.qty + ': ' + r.name;
@@ -376,14 +377,14 @@
   function setBlocked(id, on) { var c = customerById(id); if (c && c.id !== 'retail') { c.blocked = !!on; emit(); } }
   function receiptToMinibus(n) { // rejected receipt, the customer switches to a minibus (AJ-3)
     var o = order(n); if (!o || o.status !== 'payment') return;
-    o.delivery.type = 'minibus'; o.tracking = ''; o.status = 'accepted'; emit();
+    o.delivery.type = 'minibus'; o.tracking = ''; o.paid = false; o.status = 'accepted'; emit();
   }
   function canReturn(o) { return ['payment', 'packing'].indexOf(o.status) >= 0; }
   function returnForEditing(n) { var o = order(n); if (!o || !canReturn(o)) return false; o.status = 'accepted'; o.packingText = ''; o.changedInMs = false; emit(); return true; }
   // BR-10: Belposhta is prepaid, so deleting an order after the receipt was approved leaves a refund to make.
   function removeOrder(n) {
     var o = order(n); if (!o) return null;
-    if (o.delivery.type === 'post' && ['packing', 'packed', 'dispatched'].indexOf(o.status) >= 0) {
+    if (o.delivery.type === 'post' && o.paid) {
       state.refunds.push({ id: 'r' + o.number, n: o.number, cid: o.customer, who: customer(o).name, amount: compute(o).total + 10, at: D.now, stage: 'new' });
     }
     state.orders = state.orders.filter(function (x) { return x.number !== +n; }); emit(); return o;
@@ -439,15 +440,25 @@
   function mergeTarget(o) {
     var orig = o.kind === 'addon' && o.original ? order(o.original) : null;
     if (!orig || ['accepted', 'payment', 'packing'].indexOf(orig.status) < 0) return null;
-    if (orig.delivery.type === 'post' && orig.status === 'packing') return null;
+    if (orig.delivery.type === 'post' && orig.paid) return null;
     return orig;
   }
   function sendDispatch(n, text) { var o = order(n); if (!o || ['packing', 'packed'].indexOf(o.status) < 0) return false; o.dispatchText = text; o.status = 'dispatched'; emit(); return true; }
   function setChangedInMs(n, on) { var o = order(n); if (o) { o.changedInMs = !!on; emit(); } }
 
-  function approveReceipt(n) { // A-15, BR-6: approving the receipt is what sends a Belposhta order to the packing group
-    var o = order(n); if (!o || o.status !== 'payment') return false;
-    o.status = 'packing'; emit(); return true;
+  // A-15, BR-6: Belposhta goes in two manager steps after processing. Approving the receipt unlocks the tracking code;
+  // "Send to packing" then needs a valid code and the confirmed group message.
+  function approveReceipt(n) {
+    var o = order(n); if (!o || o.status !== 'payment' || o.paid) return false;
+    o.paid = true; emit(); return true;
+  }
+  function setTracking(n, value) {
+    var o = order(n); if (!o || o.status !== 'payment' || !o.paid) return;
+    o.tracking = String(value || '').toUpperCase().replace(/\s+/g, ''); emit();
+  }
+  function sendPaidToPacking(n, text) {
+    var o = order(n); if (!o || o.status !== 'payment' || !o.paid || !TRACK_RE.test(o.tracking)) return false;
+    o.packingText = text; o.status = 'packing'; emit(); return true;
   }
 
   /* ---------- tasks (A-24, A-28, A-31) ---------- */
@@ -468,7 +479,8 @@
     var out = [];
     if (state.postCheck.due && postList().length) out.push({ type: 'post-check', count: postList().length });
     state.orders.slice().sort(function (a, b) { return a.receivedAt < b.receivedAt ? -1 : 1; }).forEach(function (o) {
-      var t = o.status === 'payment' ? ['receipt', 'Проверить чек об оплате', 'Белпочта: без подтверждения чека заказ не уйдёт на упаковку']
+      var t = o.status === 'payment' && o.paid ? ['pack', 'Отправить на сборку', 'Белпочта: оплата подтверждена, введите трек-код и отправьте заказ упаковщикам']
+        : o.status === 'payment' ? ['receipt', 'Проверить чек об оплате', 'Белпочта: без подтверждения чека заказ не уйдёт на упаковку']
         : o.status === 'phone' ? ['phone', 'Согласовать телефон', 'Минск: без согласования заказ нельзя обработать']
         : o.pendingRetry ? ['retry', 'МойСклад не ответил', 'Запись заказа стоит в очереди на повтор'] : null;
       if (t) out.push({ type: t[0], title: t[1], text: t[2], n: o.number, cid: chatOf(o.customer) ? o.customer : null, who: customer(o).name, since: o.receivedAt, when: o.receivedAt });
@@ -594,7 +606,7 @@
     setLinePrice: setLinePrice, applyTier: applyTier, applyCustomerPrice: applyCustomerPrice, setQty: setQty, addItem: addItem,
     restoreItem: restoreItem, patchOrder: patchOrder, setDelivery: setDelivery, setDeliveryField: setDeliveryField,
     searchProducts: searchProducts, lineName: lineName, flavor: flavor, product: function (id) { return products[id]; },
-    packingMessage: packingMessage, processDraft: processDraft, processSend: processSend, createOrder: createOrder, createCustomer: createCustomer, approveReceipt: approveReceipt,
+    packingMessage: packingMessage, processDraft: processDraft, processSend: processSend, createOrder: createOrder, createCustomer: createCustomer, approveReceipt: approveReceipt, setTracking: setTracking, sendPaidToPacking: sendPaidToPacking,
     approvePhone: approvePhone, offerOtherDelivery: offerOtherDelivery, setBlocked: setBlocked, receiptToMinibus: receiptToMinibus,
     canReturn: canReturn, returnForEditing: returnForEditing, removeOrder: removeOrder, restoreOrder: restoreOrder, askRefundDetails: askRefundDetails, payRefund: payRefund, addCustomTask: addCustomTask, closeCustomTask: closeCustomTask,
     addonTargets: addonTargets, setKind: setKind, setOriginal: setOriginal, resendEdited: resendEdited,

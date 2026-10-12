@@ -87,7 +87,7 @@
         items: [[L.skala, 0, 12], [L.skala, 1, 12], [L.chappman, 0, 8]], customerNote: '', prices: [[L.skala, 8.7], [L.chappman, 9]] },
       { number: 1117, receivedAt: '2026-10-08T16:20:00', customer: 'c7', kind: 'main', status: 'payment', tier: 10,
         delivery: { type: 'post', fullName: 'Савицкая Наталья Игоревна', address: 'г. Гродно, ул. Ожешко, 22, кв. 3', postcode: '230023' },
-        items: [[L.acid, 2, 8], [L.catswill, 0, 6]], customerNote: '', tracking: 'PC123456789BY', prices: [[L.acid, 10.5], [L.catswill, 13.5]] },
+        items: [[L.acid, 2, 8], [L.catswill, 0, 6]], customerNote: '', prices: [[L.acid, 10.5], [L.catswill, 13.5]] },
       { number: 1116, receivedAt: '2026-10-08T10:10:00', customer: 'c3', kind: 'main', status: 'packed', tier: 50,
         delivery: { type: 'minibus', city: 'Брест' },
         items: [[L.sour, 0, 20], [L.sour, 2, 20], [L.husky, 2, 10]], customerNote: '', prices: [[L.sour, 8.4], [L.husky, 8.5]] },

@@ -233,9 +233,10 @@
         : o.phoneApproved ? '<p class="alert notice wide" style="margin:0">' + I.check + '<span>Телефон согласован</span></p>' : '');
     if (d.type === 'minsk-address') fields = field('address', 'Адрес доставки');
     if (d.type === 'post') fields = field('fullName', 'ФИО получателя') + field('postcode', 'Индекс', ' inputmode="numeric"') + field('address', 'Адрес с городом') +
-      '<div class="field"><label for="tracking">Трек-код Белпочты</label><input id="tracking" data-ofield="tracking" data-fk="tracking" value="' + esc(o.tracking) + '" placeholder="PC123456789BY"' + dis +
-      ' autocapitalize="characters" autocomplete="off" spellcheck="false"' + (ui.trackErr && !ro ? ' aria-invalid="true" aria-describedby="track-err"' : '') + '>' +
-      (ui.trackErr && !ro ? '<p class="err" id="track-err" role="alert">Трек-код введён неверно. Нужны 2 латинские буквы, 9 цифр и BY, например PC123456789BY.</p>' : '<p class="help">2 латинские буквы, 9 цифр и BY.</p>') + '</div>';
+      '<div class="field"><label for="tracking">Трек-код Белпочты</label><input id="tracking" data-fk="tracking" value="' + esc(o.tracking) + '" placeholder="PC123456789BY"' + (o.status === 'payment' && o.paid ? '' : ' disabled') +
+      ' autocapitalize="characters" autocomplete="off" spellcheck="false"' + (ui.trackErr ? ' aria-invalid="true" aria-describedby="track-err"' : '') + '>' +
+      (ui.trackErr ? '<p class="err" id="track-err" role="alert">Трек-код введён неверно. Нужны 2 латинские буквы, 9 цифр и BY, например PC123456789BY.</p>'
+        : '<p class="help">' + (o.status === 'payment' && o.paid ? '2 латинские буквы, 9 цифр и BY.' : o.paid ? '' : 'Вводится после подтверждения чека об оплате.') + '</p>') + '</div>';
     var addon = '';
     if (o.kind === 'addon') {
       var targets = SWP.addonTargets(o).map(function (x) { return { id: String(x.number), label: x.number + ' · ' + SWP.status(x.status).label }; });
@@ -283,8 +284,10 @@
         (c.blockers.length ? ' Сейчас сохранить нельзя: ' + esc(c.blockers[0]) + '.' : '') + '</p></div>';
     if (o.manual && SWP.editable(o) && o.status === 'accepted') banners += '<div class="alert alert-warn">' + I.warn + '<p>Заказ создан вручную. Выберите контрагента, заполните доставку и добавьте товары через поиск под списком.</p></div>';
     if (o.status === 'packed') banners += '<div class="alert alert-warn">' + I.check + '<p>Заказ упакован, изменить его уже нельзя. ' + (o.delivery.type === 'post' ? 'Когда посылку отнесут на почту, отметьте это в задаче «Проверить отправку почты».' : 'Когда заказ уедет, сообщите об этом клиенту на вкладке «Отправка».') + ' Заказ можно удалить: упаковщики получат «Разобрать».</p></div>';
-    if (o.status === 'payment') banners += '<div class="alert alert-warn">' + I.warn + '<p>Заказ ждёт оплаты. Клиент прислал чек: <span class="pdf">' + I.file + 'Чек об оплате.jpg</span></p>' +
-      '<button class="btn btn-primary btn-sm" type="button" data-act="receipt-ok" data-fk="receipt-ok">Подтвердить чек и отправить в группу</button><button class="btn btn-sm" type="button" data-act="receipt-no" data-fk="receipt-no">Отклонить чек</button></div>';
+    if (o.status === 'payment' && !o.paid) banners += '<div class="alert alert-warn">' + I.warn + '<p>Накладная и реквизиты отправлены, заказ ждёт оплаты. Клиент прислал чек: <span class="pdf">' + I.file + 'Чек об оплате.jpg</span></p>' +
+      '<button class="btn btn-primary btn-sm" type="button" data-act="receipt-ok" data-fk="receipt-ok">Подтвердить чек</button><button class="btn btn-sm" type="button" data-act="receipt-no" data-fk="receipt-no">Отклонить чек</button></div>';
+    if (o.status === 'payment' && o.paid) banners += '<div class="alert alert-warn">' + I.check + '<p>Оплата подтверждена. Введите трек-код в блоке «Доставка» и отправьте заказ на сборку.</p>' +
+      '<button class="btn btn-primary btn-sm' + (c.trackingBad ? ' is-off' : '') + '" type="button" data-act="pack-paid" data-fk="pack-paid">Отправить на сборку</button></div>';
     if (cust.id === 'retail' && !o.manual) banners += '<div class="alert alert-warn">' + I.warn + '<p>Клиент ещё не подтвердил заказ в боте, поэтому контрагент «Розничный покупатель». Тег с сайта: ' + esc(o.siteTag) + '.</p></div>';
 
     var suggest = c.suggest && !ro ? '<div class="notice is-warn">' + I.warn + '<span>В заказе ' + c.units + ' шт, это уровень «от ' + c.suggest + '», а цены стоят по уровню «от ' + o.tier + '». Цены сами не меняются.</span>' +
@@ -571,25 +574,27 @@
         }).join('');
       }).join('');
       var notes = [o.customerNote && 'Клиент: ' + o.customerNote, o.managerNote && 'Менеджер: ' + o.managerNote].filter(Boolean);
+      var isPost = o.delivery.type === 'post'; // Belposhta: the group message comes later, after the receipt
       var dr = SWP.processDraft(d.n), joinOnly = dr.merge && !dr.shipped; // an unprocessed original gets the items, no message yet
       return head('Проверьте накладную ' + o.number) + '<div class="sheet-body dlg-body">' +
         (d.error ? '<div class="alert alert-err" role="alert">' + I.warn + '<div><b>Не получилось</b><p>' + esc(d.error) + '</p></div></div>' : '') +
         '<p class="muted small">' + esc(who(o)) + ' · ' + esc(deliveryText(o)) + '. В МойСклад пока ничего не записано.</p>' +
+        (isPost ? '<p class="muted small">Клиент получит накладную и реквизиты для оплаты. Трек-код и отправка на сборку будут после подтверждения чека.</p>' : '') +
         (dr.merge ? '<div class="notice is-warn">' + I.warn + '<span>Это дозаказ: его товары перейдут в заказ ' + dr.merge + (dr.shipped ? ', упаковщики получат одно новое сообщение вместо старого.' : ', который ещё не обработан. Обработайте потом заказ ' + dr.merge + '.') + '</span></div>' : '') +
         '<table class="pv"><tbody>' + rows + '</tbody></table>' + totalsHTML(o, c) +
         (notes.length ? '<p class="small">' + notes.map(esc).join('<br>') + '</p>' : '') +
         (c.warnings.length ? '<ul class="blockers">' + c.warnings.map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') + '</ul>' : '') + '</div>' +
-        '<div class="sheet-foot dlg-foot"><button class="btn btn-primary" type="button" data-act="' + (joinOnly ? 'send' : 'to-message') + '" data-fk="next"' + (dr.error ? ' disabled' : '') + '>' + (joinOnly ? 'Объединить с заказом ' + dr.merge : 'Дальше: сообщение упаковщикам') + '</button><button class="btn" type="button" data-act="dialog-close">Вернуться к правке</button></div>';
+        '<div class="sheet-foot dlg-foot"><button class="btn btn-primary" type="button" data-act="' + (joinOnly || isPost ? 'send' : 'to-message') + '" data-fk="next"' + (dr.error ? ' disabled' : '') + '>' + (joinOnly ? 'Объединить с заказом ' + dr.merge : isPost ? (d.error ? 'Повторить' : 'Отправить накладную и запросить чек') : 'Дальше: сообщение упаковщикам') + '</button><button class="btn" type="button" data-act="dialog-close">Вернуться к правке</button></div>';
     }
-    var post = o.delivery.type === 'post';
     return head('Сообщение упаковщикам') + '<div class="sheet-body dlg-body">' +
       (d.error ? '<div class="alert alert-err" role="alert">' + I.warn + '<div><b>Не получилось</b><p>' + esc(d.error) + '</p></div></div>' : '') +
-      '<p class="muted small">В МойСклад пока ничего не записано. Кнопка ниже запишет цены, создаст отгрузку и сразу отправит накладную.</p>' +
+      '<p class="muted small">' + (d.paid ? 'Оплата подтверждена, трек-код ' + esc(o.tracking) + '. Проверьте сообщение для упаковщиков.' : 'В МойСклад пока ничего не записано. Кнопка ниже запишет цены, создаст отгрузку и сразу отправит накладную.') + '</p>' +
       (d.noBot ? '<div class="notice is-warn">' + I.warn + '<span>У контрагента нет Telegram: бот ему ничего не отправит, передайте накладную сами.</span></div>' : '') +
       '<span class="pdf">' + I.file + 'Накладная ' + (d.merge || o.number) + '.pdf</span>' +
       '<label class="sr-only" for="msg">Текст сообщения в группу упаковщиков</label><textarea class="msg" id="msg" data-fk="msg">' + esc(d.text) + '</textarea>' +
-      '<p class="help">' + (post ? 'Клиент получит накладную и реквизиты сразу. В группу упаковщиков это сообщение уйдёт, когда вы нажмёте «Подтвердить чек и отправить в группу» в карточке заказа.' : 'Клиент получит накладную в боте, а это сообщение с накладной уйдёт в группу упаковщиков.') + ' Текст для группы можно поправить.</p></div>' +
-      '<div class="sheet-foot dlg-foot"><button class="btn btn-primary" type="button" data-act="send" data-fk="send">' + (d.error ? 'Повторить' : post ? 'Записать и отправить клиенту' : 'Записать и отправить клиенту и в группу') + '</button><button class="btn" type="button" data-act="to-preview">Назад</button></div>';
+      '<p class="help">' + (d.paid ? 'Сообщение с накладной уйдёт в группу упаковщиков, клиент получит трек-код.' : 'Клиент получит накладную в боте, а это сообщение с накладной уйдёт в группу упаковщиков.') + ' Текст для группы можно поправить.</p></div>' +
+      '<div class="sheet-foot dlg-foot"><button class="btn btn-primary" type="button" data-act="send" data-fk="send">' + (d.paid ? 'Отправить на сборку' : d.error ? 'Повторить' : 'Записать и отправить клиенту и в группу') + '</button>' +
+      '<button class="btn" type="button" data-act="' + (d.paid ? 'dialog-close' : 'to-preview') + '">' + (d.paid ? 'Отмена' : 'Назад') + '</button></div>';
   }
   function renderDialog() {
     var sheet = $('#sheet');
@@ -777,7 +782,16 @@
     'to-preview': function () { ui.dialog = { type: 'preview', n: ui.dialog.n }; renderDialog(); },
     'order-new': function () { var n = SWP.createOrder(); go('#/order/' + n); toast('Заказ ' + n + ' создан. Заполните его и обработайте'); },
     'edit-on': function (b, n) { ui.editing = n; render(); },
-    'receipt-ok': function (b, n) { if (SWP.approveReceipt(n)) toast('Чек подтверждён. Заказ ' + n + ' отправлен в группу упаковщиков'); },
+    'receipt-ok': function (b, n) { if (SWP.approveReceipt(n)) toast('Чек подтверждён. Введите трек-код и отправьте заказ на сборку'); },
+    'pack-paid': function (b, n) {
+      var o = SWP.order(n);
+      if (SWP.compute(o).trackingBad) { // send the manager to the tracking code first
+        ui.trackErr = true; render();
+        var t = $('#tracking'); if (t) { t.scrollIntoView({ block: 'center' }); t.focus(); t.select(); }
+        return;
+      }
+      ui.dialog = { type: 'packing', n: n, text: SWP.packingMessage(o), paid: true }; renderDialog();
+    },
     tab: function (b) { ui.tab = b.getAttribute('data-t'); render(); },
     'ask-pick': function (b) { var o = ui.dialog.options[+b.getAttribute('data-i')]; ui.dialog = null; renderDialog(); o.run(); },
     'phone-ok': function (b, n) { SWP.approvePhone(n); toast('Телефон согласован, заказ ' + n + ' можно обрабатывать'); },
@@ -805,7 +819,7 @@
       else if (st === 'packed') { text = 'Заказ уже упакован. Упаковщики получат «Разобрать» в ответ на сообщение заказа, отгрузка и заказ в МойСклад удалятся, товар вернётся на остаток.'; done = 'Заказ ' + n + ' удалён. Через 10 секунд упаковщики получат «Разобрать»'; }
       else if (st === 'dispatched') text = 'Заказ уже отправлен клиенту. Отгрузка и заказ в МойСклад удалятся, и товар вернётся на остаток, поэтому удаляйте только если посылка вернулась на склад.';
       else text = 'Заказ удалится из панели и из МойСклад, резерв товара снимется.';
-      if (o.delivery.type === 'post' && ['packing', 'packed', 'dispatched'].indexOf(st) >= 0) text += ' Заказ оплачен: появится задача вернуть клиенту деньги.';
+      if (o.delivery.type === 'post' && o.paid) text += ' Заказ оплачен: появится задача вернуть клиенту деньги.';
       ask(n, 'Удалить заказ ' + n + '?', text + ' В течение 10 секунд удаление можно отменить.', [
         { label: 'Удалить заказ', kind: 'danger', run: function () {
           var gone = SWP.removeOrder(n); go('#/');
@@ -886,6 +900,10 @@
     },
     send: function () { // the single step that writes to MoySklad and sends the delivery note (A-11, A-12)
       var d = ui.dialog, o = SWP.order(d.n), post = o.delivery.type === 'post', msg = $('#msg');
+      if (d.paid) { // Belposhta after the receipt: only the group message is sent now
+        if (SWP.sendPaidToPacking(d.n, msg.value)) { ui.dialog = null; toast('Заказ ' + d.n + ' передан на упаковку, клиент получил трек-код'); go('#/'); }
+        return;
+      }
       var res = SWP.processSend(d.n, msg ? msg.value : '');
       if (res.error) { if (msg) d.text = msg.value; d.error = res.error; return renderDialog(); }
       ui.dialog = null;
@@ -894,7 +912,7 @@
         toast('Дозаказ ' + d.n + ' объединён с заказом ' + res.merged + (res.shipped ? '. Новая накладная отправлена' : '. Теперь обработайте заказ ' + res.merged));
         return go('#/order/' + res.merged);
       }
-      toast(post ? 'Накладная отправлена клиенту. Заказ ' + d.n + ' ждёт оплаты' : 'Накладная отправлена клиенту и в группу. Заказ ' + d.n + ' передан на упаковку');
+      toast(post ? 'Накладная и реквизиты отправлены клиенту. Заказ ' + d.n + ' ждёт оплаты' : 'Накладная отправлена клиенту и в группу. Заказ ' + d.n + ' передан на упаковку');
       go('#/');
     },
     'dialog-close': function () { closeDialog(); render(); },
@@ -956,10 +974,10 @@
     var t = e.target;
     if (t.id === 'q') { ui.filter.q = t.value; patch($('#q-list'), queueListHTML()); }
     if (t.id === 'add-q') { ui.addQ = t.value; render(); }
-    if (t.id === 'tracking') { // "Process" lights up as soon as the code matches the format
+    if (t.id === 'tracking') { // "Send to packing" lights up as soon as the code matches the format
       var v = t.value.toUpperCase().replace(/\s+/g, '');
       if (SWP.TRACK_RE.test(v)) ui.trackErr = false;
-      SWP.patchOrder(route().n, { tracking: v });
+      SWP.setTracking(route().n, v);
     }
     if (t.id === 'b-q') { ui.blockQ = t.value; render(); }
     if (t.id === 'pay') SWP.setSetting('payment', t.value); // Belposhta switches off the moment the details become empty (S-15)
