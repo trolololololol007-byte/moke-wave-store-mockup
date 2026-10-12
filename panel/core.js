@@ -12,7 +12,7 @@
   var SESSION_MS = 12 * 60 * 60 * 1000;
   var MUTE_MS = 5 * 60 * 1000;
   var MAX_TRIES = 3;
-  var KEY = 'swp-mock-v13';
+  var KEY = 'swp-mock-v14';
   var TRACK_RE = /^[A-Z]{2}\d{9}BY$/; // Belposhta tracking code: two letters, nine digits, BY (A-15)
 
   var STATUSES = [
@@ -79,6 +79,8 @@
       custom: [],  // tasks a manager created from a chat (A-28)
       refunds: [], // paid Belposhta orders that were deleted and wait for a manual refund (BR-10)
       chats: JSON.parse(JSON.stringify(D.chats)),
+      packers: JSON.parse(JSON.stringify(D.packers)), // the list is maintained in settings (A-20)
+      packersOff: [], // removed packers keep their recorded presses
       managerKey: D.keys.manager,
       settings: { // A-16
         cities: CITIES.slice(), autoDelete: 168,
@@ -90,7 +92,7 @@
     };
   }
   function load() {
-    try { var s = JSON.parse(localStorage.getItem(KEY)); if (s && s.orders && s.guard && s.customers && s.priceUndo && s.postCheck && s.settings && s.settings.postCheckTime && s.chats && s.refunds && s.custom) { state = s; return; } } catch (e) {}
+    try { var s = JSON.parse(localStorage.getItem(KEY)); if (s && s.orders && s.guard && s.customers && s.priceUndo && s.postCheck && s.settings && s.settings.postCheckTime && s.chats && s.refunds && s.custom && s.packers) { state = s; return; } } catch (e) {}
     state = seed();
   }
   function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
@@ -521,7 +523,19 @@
     for (var i = 0; i < 20; i++) out += (i && i % 4 === 0 ? '-' : '') + abc[buf[i] % abc.length];
     state.managerKey = 'MGR-' + out; emit(); return state.managerKey;
   }
-  function packerReport() { return D.packers.slice(); }
+  function packerReport() { return state.packers.slice(); }
+  function addPacker(user) {
+    user = String(user || '').trim();
+    if (!/^@[A-Za-z0-9_]{5,32}$/.test(user)) return { error: 'Тег в формате @username: латиница, цифры и «_», от 5 символов' };
+    if (state.packers.some(function (p) { return p.user.toLowerCase() === user.toLowerCase(); })) return { error: 'Этот упаковщик уже есть в списке' };
+    var back = state.packersOff.filter(function (p) { return p.user.toLowerCase() === user.toLowerCase(); })[0];
+    state.packersOff = state.packersOff.filter(function (p) { return p !== back; });
+    state.packers.push(back || { user: user, packed: 0, repacked: 0, dismantled: 0 }); emit(); return { ok: true };
+  }
+  function removePacker(user) {
+    var p = state.packers.filter(function (x) { return x.user === user; })[0]; if (!p) return;
+    state.packers = state.packers.filter(function (x) { return x !== p; }); state.packersOff.push(p); emit();
+  }
 
   /* ---------- queue (A-2) ---------- */
   // "Requires action": a task is open on the order, including a packed Belposhta parcel waiting in the daily check.
@@ -586,7 +600,7 @@
     sendDispatch: sendDispatch, setChangedInMs: setChangedInMs,
     chatOf: chatOf, chatList: chatList, readChat: readChat, sendChat: sendChat, chatHasTask: chatHasTask, chatTasks: chatTasks, orderNeedsAction: orderNeedsAction,
     settings: function () { return state.settings; }, setSetting: setSetting, addCity: addCity, removeCity: removeCity, cityInUse: cityInUse,
-    newManagerKey: newManagerKey, packerReport: packerReport,
+    newManagerKey: newManagerKey, packerReport: packerReport, addPacker: addPacker, removePacker: removePacker,
     tasks: tasks, postList: postList, confirmDispatch: confirmDispatch, revertDispatch: revertDispatch, canRevertDispatch: canRevertDispatch, closePostCheck: closePostCheck, openPostCheck: openPostCheck,
     markRemoteChange: function (n) { var o = order(n); if (o) { o.remoteChanged = true; emit(); } },
     clearRemoteChange: function (n) { var o = order(n); if (o) { o.remoteChanged = false; emit(); } },

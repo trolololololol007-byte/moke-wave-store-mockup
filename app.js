@@ -313,8 +313,10 @@
   function fieldHTML(f) {
     var v = ui.form[f.id] || '', id = 'f-' + f.id, ctl;
     if (f.type === 'select') {
-      ctl = '<select id="' + id + '" name="' + f.id + '" data-field="' + f.id + '" data-fk="fd-' + f.id + '"' + inv(f.id) + '><option value="">Выберите город</option>' +
-        f.options.map(function (o) { return '<option' + (v === o ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join('') + '</select>';
+      // W-6: the city is chosen from the list, and typing in the field finds a city in it
+      ctl = '<div class="combo" data-combo="city" data-value="' + esc(v) + '" data-options="' + esc(JSON.stringify(f.options)) + '">' +
+        '<input id="f-city" type="text" role="combobox" aria-autocomplete="list" aria-expanded="false" autocomplete="off" data-combo-input data-fk="f-city" placeholder="Выберите или введите город" value="' + esc(v) + '"' + inv(f.id) + '>' +
+        '<ul class="combo-list" role="listbox" hidden></ul></div>';
     } else {
       var t = f.type === 'tel' ? 'tel' : 'text';
       var im = f.inputmode ? ' inputmode="' + f.inputmode + '"' : (f.type === 'tel' ? ' inputmode="tel"' : '');
@@ -597,6 +599,59 @@
       }
     }
   });
+
+
+  /* ---------- searchable city field: pick from the list or type to find a city in it ---------- */
+  var comboLow = function (v) { return String(v).toLowerCase().replace(/ё/g, 'е').trim(); };
+  function comboBox(input) { return input.closest('[data-combo]'); }
+  function comboShow(input) {
+    var box = comboBox(input), list = box.querySelector('.combo-list'), q = input.value === box.getAttribute('data-value') ? '' : comboLow(input.value);
+    var opts = JSON.parse(box.getAttribute('data-options')).filter(function (o) { return !q || comboLow(o).indexOf(q) >= 0; });
+    list.innerHTML = opts.length ? opts.map(function (o, i) {
+      return '<li role="option" class="combo-opt' + (q && i === 0 ? ' is-act' : '') + '" data-v="' + esc(o) + '">' + esc(o) + '</li>';
+    }).join('') : '<li class="combo-none">Такого города нет в списке</li>';
+    list.hidden = false; input.setAttribute('aria-expanded', 'true');
+  }
+  function comboClose(input, revert) {
+    var box = comboBox(input); if (!box) return;
+    box.querySelector('.combo-list').hidden = true; input.setAttribute('aria-expanded', 'false');
+    if (revert) input.value = box.getAttribute('data-value');
+  }
+  var comboPicked = 0; // a pick re-renders the form and refocuses the field; the list must not reopen then
+  function comboPick(input, value) { comboPicked = Date.now(); comboClose(input); input.value = value; ui.form.city = value; delete ui.errors.city; SW.saveForm(ui.form); render(); }
+  document.addEventListener('focusin', function (e) { if (e.target.matches('[data-combo-input]') && Date.now() - comboPicked > 300) { e.target.select(); comboShow(e.target); } });
+  document.addEventListener('click', function (e) { if (e.target.matches('[data-combo-input]') && comboBox(e.target).querySelector('.combo-list').hidden) comboShow(e.target); });
+  document.addEventListener('input', function (e) { if (e.target.matches('[data-combo-input]')) comboShow(e.target); });
+  document.addEventListener('pointerdown', function (e) {
+    var opt = e.target.closest('.combo-opt');
+    if (opt) { e.preventDefault(); comboPick(opt.closest('[data-combo]').querySelector('[data-combo-input]'), opt.getAttribute('data-v')); }
+  });
+  document.addEventListener('focusout', function (e) {
+    var input = e.target;
+    if (!input.matches || !input.matches('[data-combo-input]')) return;
+    setTimeout(function () { // a typed name counts only when it is exactly a city from the list
+      if (!input.isConnected) return;
+      var box = comboBox(input), typed = comboLow(input.value);
+      var exact = JSON.parse(box.getAttribute('data-options')).filter(function (o) { return comboLow(o) === typed; })[0];
+      if (exact && exact !== box.getAttribute('data-value')) comboPick(input, exact); else comboClose(input, true);
+    }, 0);
+  });
+  document.addEventListener('keydown', function (e) {
+    var input = e.target;
+    if (!input.matches || !input.matches('[data-combo-input]')) return;
+    var box = comboBox(input), opts = Array.prototype.slice.call(box.querySelectorAll('.combo-opt')), cur = box.querySelector('.combo-opt.is-act');
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (box.querySelector('.combo-list').hidden) return comboShow(input);
+      var i = opts.indexOf(cur) + (e.key === 'ArrowDown' ? 1 : -1), next = opts[Math.max(0, Math.min(opts.length - 1, i))];
+      if (cur) cur.classList.remove('is-act');
+      if (next) { next.classList.add('is-act'); next.scrollIntoView({ block: 'nearest' }); }
+    } else if (e.key === 'Enter') {
+      e.preventDefault(); e.stopPropagation();
+      var pick = cur || (input.value !== box.getAttribute('data-value') ? opts[0] : null);
+      if (pick) comboPick(input, pick.getAttribute('data-v')); else comboClose(input, true);
+    } else if (e.key === 'Escape') { e.stopPropagation(); comboClose(input, true); }
+  }, true);
 
   document.addEventListener('change', function (e) {
     var t = e.target;

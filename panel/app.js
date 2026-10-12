@@ -17,6 +17,7 @@
     chatDraft: '',   // chats: the message being typed
     editing: null,   // number of the order with the packers that the manager unlocked with "Edit" (A-32)
     taskSort: 'old', // tasks: 'old' (default, oldest first) | 'new'
+    packerErr: '',   // settings: error of the add-packer form
     citiesOpen: false, setErr: '', red: {}, // settings: cities list and form error; red: lines flagged after "apply customer prices"
     chatQ: '', chatFolder: 'all', // chats: search and folder ('all' | 'marked')
     setTab: 'site', cityErr: '', newKey: '', rep: { from: '2026-10-01', to: '2026-10-10' }, // settings
@@ -223,7 +224,10 @@
       return '<div class="field"><label for="d-' + id + '">' + label + '</label><input id="d-' + id + '" data-dfield="' + id + '" data-fk="d-' + id + '" value="' + esc(d[id] || '') + '"' + (extra || '') + dis + '></div>';
     }
     var fields = '';
-    if (d.type === 'minibus') fields = '<div class="field"><label for="d-city">Город</label><select id="d-city" data-dfield="city" data-fk="d-city"' + dis + '>' + options(SWP.CITIES.map(function (c) { return { id: c, label: c }; }), d.city, 'Выберите город') + '</select></div>';
+    if (d.type === 'minibus') fields = '<div class="field"><label for="d-city">Город</label>' + (ro ? '<input id="d-city" value="' + esc(d.city || '') + '" disabled>' :
+        '<div class="combo" data-combo="city" data-value="' + esc(d.city || '') + '" data-options="' + esc(JSON.stringify(SWP.CITIES)) + '">' +
+        '<input id="d-city" type="text" role="combobox" aria-autocomplete="list" aria-expanded="false" autocomplete="off" data-combo-input data-fk="d-city" placeholder="Выберите или введите город" value="' + esc(d.city || '') + '">' +
+        '<ul class="combo-list" role="listbox" hidden></ul></div>') + '</div>';
     if (d.type === 'minsk-minibus') fields = field('phone', 'Телефон для водителя', ' type="tel"') +
       '<p class="alert ' + (o.phoneApproved ? 'notice' : 'alert-warn') + ' wide" style="margin:0">' + (o.phoneApproved ? I.check + '<span>Телефон согласован</span>' : I.warn + '<span>Телефон ещё не согласован. Обработать заказ можно только после согласования.</span>') + '</p>';
     if (d.type === 'minsk-address') fields = field('address', 'Адрес доставки');
@@ -287,8 +291,10 @@
       '<button class="btn btn-sm" type="button" data-act="tier-all" data-t="' + c.suggest + '" data-fk="tier-all">Поставить цены от ' + c.suggest + '</button></div>' : '';
     var found = ui.addQ ? SWP.searchProducts(ui.addQ, o) : [];
     var add = ro ? '' : '<div class="search">' + I.search + '<input type="search" id="add-q" data-fk="add-q" value="' + esc(ui.addQ) + '" placeholder="Добавить товар: вкус или линейка" aria-label="Поиск товара для добавления в накладную"></div>' +
-      (ui.addQ ? (found.length ? '<ul class="add-res">' + found.map(function (p) {
-        return '<li><span>' + esc(SWP.flavor(p)) + '<small>' + esc(SWP.lineName(p.folderId)) + ' · на складе ' + p.stock + ' шт</small></span><button type="button" class="add" data-act="item-add" data-id="' + p.id + '" data-fk="add-' + p.id + '" aria-label="Добавить в накладную: ' + esc(SWP.flavor(p)) + '">+</button></li>';
+      (ui.addQ ? (found.length ? '<ul class="pick-list">' + found.map(function (p) { // the whole row adds the item
+        return '<li><button type="button" class="pick" data-act="item-add" data-id="' + p.id + '" data-fk="add-' + p.id + '" aria-label="Добавить в накладную: ' + esc(SWP.flavor(p)) + '">' +
+          '<span class="pick-t"><b>' + esc(SWP.flavor(p)) + '</b><small>' + esc(SWP.lineName(p.folderId)) + '</small></span>' +
+          '<span class="pick-s">на складе ' + p.stock + ' шт</span><span class="pick-plus" aria-hidden="true">' + I.plus + '</span></button></li>';
       }).join('') + '</ul>' : '<p class="muted small" style="margin:0">Ничего не найдено среди товаров в наличии.</p>') : '');
 
     var cta;
@@ -393,7 +399,7 @@
       var c = SWP.customerById(ch.customer), last = ch.messages[ch.messages.length - 1];
       return '<li><a class="ch-item' + (cur === c.id ? ' is-on' : '') + '" href="#/chats/' + c.id + '"><span class="ch-top"><b>' + esc(c.name) + '</b><time>' + SWP.dateTime(last.at).slice(0, 5) + ' ' + SWP.dateTime(last.at).slice(11) + '</time></span>' +
         '<span class="ch-prev">' + (last.from === 'm' ? 'Вы: ' : '') + esc(last.text) + '</span>' +
-        '<span class="ch-flags">' + (ch.unread ? '<span class="pill is-act">ждёт ответа</span>' : '') + (SWP.chatHasTask(ch.customer) ? '<span class="pill is-warn">нужно проверить</span>' : '') + (c.blocked ? '<span class="pill">заблокирован</span>' : '') + '</span></a></li>';
+        '<span class="ch-flags">' + (SWP.chatHasTask(ch.customer) ? '<span class="pill is-warn">нужно проверить</span>' : '') + (c.blocked ? '<span class="pill">заблокирован</span>' : '') + '</span></a></li>';
     }).join('') + '</ul>' : '<p class="muted small">Чатов не найдено.</p>';
     var side = '<div class="ch-side"><div class="search">' + I.search + '<input type="search" id="ch-q" data-fk="ch-q" value="' + esc(ui.chatQ) + '" placeholder="Ник или тег клиента" aria-label="Поиск чата по нику или тегу"></div>' +
       '<div class="seg seg-2 ch-folders" role="group" aria-label="Папка">' + [['all', 'Все чаты'], ['marked', 'Нужно проверить' + (marked ? ' · ' + marked : '')]].map(function (f) {
@@ -466,12 +472,16 @@
         (blocked.length ? '<ul class="add-res">' + blocked.map(function (c) { return row(c, 'block-off', 'Разблокировать', ''); }).join('') + '</ul>' : '<p class="muted small" style="margin:0">Заблокированных клиентов нет.</p>') + '</section>';
     } else if (tab === 'report') {
       var rep = SWP.packerReport();
-      body = '<section class="sec set"><h2 class="h2">Выгрузка по упаковщикам</h2><p class="help">Сколько заказов каждый упаковщик упаковал, переупаковал и разобрал за период.</p>' +
+      body = '<section class="sec set"><h2 class="h2">Упаковщики</h2><p class="help">Список тех, чьи нажатия «Упаковано» и «Разобрано» в группе попадают в выгрузку.</p>' +
+        '<form class="row-form" id="packer-form"><div class="field"><label class="sr-only" for="packer-new">Тег упаковщика в Telegram</label><input id="packer-new" data-fk="packer-new" placeholder="@username упаковщика" autocomplete="off" spellcheck="false"' + (ui.packerErr ? ' aria-invalid="true" aria-describedby="packer-err"' : '') + '></div>' +
+        '<button class="btn" type="submit" data-fk="packer-add">Добавить</button></form>' + (ui.packerErr ? '<p class="err" id="packer-err" role="alert">' + esc(ui.packerErr) + '</p>' : '') +
+        (rep.length ? '<ul class="add-res">' + rep.map(function (p) { return '<li><span>' + esc(p.user) + '</span><button type="button" class="btn btn-sm" data-act="packer-x" data-u="' + esc(p.user) + '" data-fk="px-' + esc(p.user) + '">Удалить</button></li>'; }).join('') + '</ul>' : '<p class="muted small" style="margin:0">Упаковщиков в списке нет.</p>') + '</section>' +
+        '<section class="sec set"><h2 class="h2">Выгрузка по упаковщикам</h2><p class="help">Сколько заказов каждый упаковщик упаковал, переупаковал и разобрал за период.</p>' +
         '<div class="grid2"><div class="field"><label for="rp-from">С</label><input id="rp-from" type="date" data-rep="from" data-fk="rp-from" value="' + esc(ui.rep.from) + '"></div>' +
         '<div class="field"><label for="rp-to">По</label><input id="rp-to" type="date" data-rep="to" data-fk="rp-to" value="' + esc(ui.rep.to) + '"></div></div>' +
         '<table class="pc rp"><thead><tr><th>Упаковщик</th><th class="num">Упаковано</th><th class="num">Переупаковано</th><th class="num">Разобрано</th></tr></thead><tbody>' +
         rep.map(function (p) { return '<tr><td>' + esc(p.user) + '</td><td class="num">' + p.packed + '</td><td class="num">' + p.repacked + '</td><td class="num">' + p.dismantled + '</td></tr>'; }).join('') + '</tbody></table>' +
-        '<button class="btn btn-primary" type="button" data-act="report-dl" data-fk="report-dl"' + (ui.rep.from && ui.rep.to && ui.rep.from <= ui.rep.to ? '' : ' disabled') + '>' + I.file + 'Скачать Excel</button></section>';
+        '<button class="btn btn-primary" type="button" data-act="report-dl" data-fk="report-dl"' + (rep.length && ui.rep.from && ui.rep.to && ui.rep.from <= ui.rep.to ? '' : ' disabled') + '>' + I.file + 'Скачать Excel</button></section>';
     } else {
       body = '<section class="sec set"><h2 class="h2">Ключ обычного менеджера</h2>' + (admin
         ? '<p class="help">Новый ключ создаёт система, свой ключ ввести нельзя. Старый ключ сразу перестаёт работать, все менеджеры входят заново.</p>' +
@@ -802,11 +812,17 @@
     'chat-file': function () { var names = ['Накладная 1124.pdf', 'Фото посылки.jpg', 'Квитанция.jpg', 'Прайс.pdf', 'Фото 2.jpg']; ui.chatDraft = $('#ch-msg').value; ui.chatFiles.push(names[ui.chatFiles.length]); render(); $('#ch-msg').focus(); },
     'chat-file-x': function (b) { ui.chatDraft = $('#ch-msg').value; ui.chatFiles.splice(+b.getAttribute('data-i'), 1); render(); },
     'chat-folder': function (b) { ui.chatFolder = b.getAttribute('data-f'); render(); },
-    'set-tab': function (b) { ui.setTab = b.getAttribute('data-t'); ui.cityErr = ''; ui.setErr = ''; ui.newKey = ''; render(); },
+    'set-tab': function (b) { ui.setTab = b.getAttribute('data-t'); ui.cityErr = ''; ui.packerErr = ''; ui.setErr = ''; ui.newKey = ''; render(); },
     'city-x': function (b) {
       var c = b.getAttribute('data-c'), used = SWP.cityInUse(c);
       ask(null, 'Убрать город ' + c + '?', 'Клиенты больше не смогут выбрать его на сайте.' + (used ? ' Сейчас в работе заказов в этот город: ' + used + ', они останутся как есть.' : ''), [
         { label: 'Убрать город', kind: 'danger', run: function () { SWP.removeCity(c); toast('Город ' + c + ' убран из списка на сайте'); } }
+      ]);
+    },
+    'packer-x': function (b) {
+      var u = b.getAttribute('data-u');
+      ask(null, 'Удалить упаковщика ' + u + '?', 'Он пропадёт из списка и из новых выгрузок. Его прошлые нажатия в группе сохранятся: если добавить его снова, они вернутся в выгрузку.', [
+        { label: 'Удалить', kind: 'danger', run: function () { SWP.removePacker(u); toast('Упаковщик ' + u + ' удалён из списка'); } }
       ]);
     },
     'key-new': function () {
@@ -906,6 +922,13 @@
       SWP.setOrderCustomer(cd.n, made.id); ui.dialog = null; render(); toast('Контрагент создан, заказ ' + cd.n + ' записан на него');
       return;
     }
+    if (e.target.id === 'packer-form') {
+      e.preventDefault();
+      var pr = SWP.addPacker($('#packer-new').value), typedPacker = $('#packer-new').value;
+      ui.packerErr = pr.error || ''; render();
+      if (pr.error) $('#packer-new').value = typedPacker; else toast('Упаковщик добавлен');
+      return;
+    }
     if (e.target.id === 'city-form') {
       e.preventDefault();
       var res = SWP.addCity($('#city-new').value);
@@ -937,6 +960,59 @@
     if (t.id === 'c-q' && ui.dialog) { ui.dialog.q = t.value; ui.dialog.name = $('#c-name') ? $('#c-name').value : null; renderDialog(); }
   });
   // Other fields commit on change (blur or Enter), so typing a price is not interrupted.
+
+  /* ---------- searchable city field: pick from the list or type to find a city in it ---------- */
+  var comboLow = function (v) { return String(v).toLowerCase().replace(/ё/g, 'е').trim(); };
+  function comboBox(input) { return input.closest('[data-combo]'); }
+  function comboShow(input) {
+    var box = comboBox(input), list = box.querySelector('.combo-list'), q = input.value === box.getAttribute('data-value') ? '' : comboLow(input.value);
+    var opts = JSON.parse(box.getAttribute('data-options')).filter(function (o) { return !q || comboLow(o).indexOf(q) >= 0; });
+    list.innerHTML = opts.length ? opts.map(function (o, i) {
+      return '<li role="option" class="combo-opt' + (q && i === 0 ? ' is-act' : '') + '" data-v="' + esc(o) + '">' + esc(o) + '</li>';
+    }).join('') : '<li class="combo-none">Такого города нет в списке</li>';
+    list.hidden = false; input.setAttribute('aria-expanded', 'true');
+  }
+  function comboClose(input, revert) {
+    var box = comboBox(input); if (!box) return;
+    box.querySelector('.combo-list').hidden = true; input.setAttribute('aria-expanded', 'false');
+    if (revert) input.value = box.getAttribute('data-value');
+  }
+  var comboPicked = 0; // a pick re-renders the form and refocuses the field; the list must not reopen then
+  function comboPick(input, value) { comboPicked = Date.now(); comboClose(input); input.value = value; SWP.setDeliveryField(route().n, 'city', value); }
+  document.addEventListener('focusin', function (e) { if (e.target.matches('[data-combo-input]') && Date.now() - comboPicked > 300) { e.target.select(); comboShow(e.target); } });
+  document.addEventListener('click', function (e) { if (e.target.matches('[data-combo-input]') && comboBox(e.target).querySelector('.combo-list').hidden) comboShow(e.target); });
+  document.addEventListener('input', function (e) { if (e.target.matches('[data-combo-input]')) comboShow(e.target); });
+  document.addEventListener('pointerdown', function (e) {
+    var opt = e.target.closest('.combo-opt');
+    if (opt) { e.preventDefault(); comboPick(opt.closest('[data-combo]').querySelector('[data-combo-input]'), opt.getAttribute('data-v')); }
+  });
+  document.addEventListener('focusout', function (e) {
+    var input = e.target;
+    if (!input.matches || !input.matches('[data-combo-input]')) return;
+    setTimeout(function () { // a typed name counts only when it is exactly a city from the list
+      if (!input.isConnected) return;
+      var box = comboBox(input), typed = comboLow(input.value);
+      var exact = JSON.parse(box.getAttribute('data-options')).filter(function (o) { return comboLow(o) === typed; })[0];
+      if (exact && exact !== box.getAttribute('data-value')) comboPick(input, exact); else comboClose(input, true);
+    }, 0);
+  });
+  document.addEventListener('keydown', function (e) {
+    var input = e.target;
+    if (!input.matches || !input.matches('[data-combo-input]')) return;
+    var box = comboBox(input), opts = Array.prototype.slice.call(box.querySelectorAll('.combo-opt')), cur = box.querySelector('.combo-opt.is-act');
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (box.querySelector('.combo-list').hidden) return comboShow(input);
+      var i = opts.indexOf(cur) + (e.key === 'ArrowDown' ? 1 : -1), next = opts[Math.max(0, Math.min(opts.length - 1, i))];
+      if (cur) cur.classList.remove('is-act');
+      if (next) { next.classList.add('is-act'); next.scrollIntoView({ block: 'nearest' }); }
+    } else if (e.key === 'Enter') {
+      e.preventDefault(); e.stopPropagation();
+      var pick = cur || (input.value !== box.getAttribute('data-value') ? opts[0] : null);
+      if (pick) comboPick(input, pick.getAttribute('data-v')); else comboClose(input, true);
+    } else if (e.key === 'Escape') { e.stopPropagation(); comboClose(input, true); }
+  }, true);
+
   document.addEventListener('change', function (e) {
     if (rendering) return;
     var t = e.target, n = route().n, num = function (v) { return String(v).replace(',', '.').trim(); };
