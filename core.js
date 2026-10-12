@@ -168,10 +168,7 @@
   var DELIVERY = [
     { id: 'minsk-address', title: 'Минск, на адрес', hint: 'Курьер, доплата 15 BYN',
       fields: [{ id: 'address', label: 'Адрес доставки', placeholder: 'ул. Притыцкого, 29, кв. 12', required: true }], warning: WARN },
-    { id: 'minsk-minibus', title: 'Минск, маршрутка', hint: 'Доплата 5 BYN',
-      fields: [{ id: 'phone', label: 'Телефон для водителя', placeholder: '+375 29 123-45-67', type: 'tel', required: true }],
-      warning: 'Укажите номер, на который точно можно дозвониться. Если водитель не дозвонится, могут возникнуть проблемы с заказом.' },
-    { id: 'minibus', title: 'Маршрутка в областной город', hint: '1–2 дня, водителю ~10 BYN сверх накладной',
+    { id: 'minibus', title: 'Маршрутка', hint: 'По Минску: доплата 5 BYN. В другие города: 1–2 дня, водителю ~10 BYN сверх накладной',
       fields: [{ id: 'city', label: 'Город', type: 'select', options: null, required: true },
                ], warning: WARN },
     { id: 'post', title: 'Белпочта', hint: '3–5 дней, предоплата, +10 BYN',
@@ -180,15 +177,22 @@
                { id: 'address', label: 'Адрес с городом', placeholder: 'г. Гомель, ул. Советская, 10, кв. 5', required: true }],
       warning: 'Если данные для Белпочты указаны неверно, могут возникнуть проблемы с оформлением и отправкой заказа.' }
   ];
-  var CITIES = ['Брест', 'Витебск', 'Гомель', 'Гродно', 'Могилёв', 'Барановичи', 'Бобруйск', 'Борисов', 'Лида', 'Молодечно', 'Мозырь', 'Новополоцк', 'Орша', 'Пинск', 'Полоцк', 'Солигорск'];
-  DELIVERY[2].fields[0].options = CITIES;
+  var CITIES = ['Минск', 'Брест', 'Витебск', 'Гомель', 'Гродно', 'Могилёв', 'Барановичи', 'Бобруйск', 'Борисов', 'Лида', 'Молодечно', 'Мозырь', 'Новополоцк', 'Орша', 'Пинск', 'Полоцк', 'Солигорск'];
+  delivery('minibus').fields[0].options = CITIES;
+  // Minsk is a city of the minibus method, not a method of its own: choosing it adds the driver's phone (W-6).
+  var MINSK = 'Минск';
+  var PHONE = { id: 'phone', label: 'Телефон для водителя', placeholder: '+375 29 123-45-67', type: 'tel', required: true };
+  var PHONE_WARN = 'Укажите номер, на который точно можно дозвониться. Если водитель не дозвонится, могут возникнуть проблемы с заказом.';
+  function isMinskMinibus(form) { return form.delivery === 'minibus' && form.city === MINSK; }
+  function fields(form) { var d = delivery(form.delivery); return d ? d.fields.concat(isMinskMinibus(form) ? [PHONE] : []) : []; }
+  function warning(form) { var d = delivery(form.delivery); return isMinskMinibus(form) ? PHONE_WARN : d ? d.warning : ''; }
   function delivery(id) { return DELIVERY.filter(function (d) { return d.id === id; })[0] || null; }
   function validate(form) {
     var e = {};
     if (!/^@[A-Za-z0-9_]{5,32}$/.test(String(form.telegram || '').trim())) e.telegram = 'Укажите ник в Telegram в формате @username';
     var d = delivery(form.delivery);
     if (!d) e.delivery = 'Выберите способ доставки';
-    else d.fields.forEach(function (f) {
+    else fields(form).forEach(function (f) {
       var v = String(form[f.id] || '').trim();
       if (f.required && !v) { e[f.id] = f.id === 'city' ? 'Выберите город' : 'Заполните поле «' + f.label + '»'; return; }
       if (f.id === 'phone' && !/^\+?375\s?\(?(25|29|33|44)\)?[\s-]?\d{3}[\s-]?\d{2}[\s-]?\d{2}$/.test(v)) e.phone = 'Номер в формате +375 29 123-45-67';
@@ -200,7 +204,13 @@
   }
   // Customer details draft: kept until "Place a new order" (W-17)
   function saveForm(form) { try { localStorage.setItem(key + '-form', JSON.stringify(form)); } catch (x) {} }
-  function loadForm() { try { return JSON.parse(localStorage.getItem(key + '-form')) || {}; } catch (x) { return {}; } }
+  function loadForm() {
+    try {
+      var f = JSON.parse(localStorage.getItem(key + '-form')) || {};
+      if (f.delivery === 'minsk-minibus') { f.delivery = 'minibus'; f.city = MINSK; } // drafts saved before the methods were merged
+      return f;
+    } catch (x) { return {}; }
+  }
   function newOrder() { try { localStorage.removeItem(key + '-form'); localStorage.removeItem(key + '-last'); } catch (x) {} state.cart = {}; prevTier = null; emit(true); }
   function placeOrder(form) { // W-8 + W-17: the order is created; confirmation happens in the bot
     var err = validate(form); if (Object.keys(err).length) return { errors: err };
@@ -247,7 +257,7 @@
   function upgradeText(ev) { return 'Вы набрали ' + tierLabel(ev.tier) + ': вам выдана скидка ' + money(ev.savings); }
 
   var api = window.SW = {
-    TIERS: TIERS, MIN_SUM: MIN_SUM, MIN_UNITS: MIN_UNITS, DELIVERY: DELIVERY, CITIES: CITIES, delivery: delivery,
+    TIERS: TIERS, MIN_SUM: MIN_SUM, MIN_UNITS: MIN_UNITS, DELIVERY: DELIVERY, CITIES: CITIES, delivery: delivery, fields: fields, warning: warning,
     init: init, on: on, get tier() { return state.tier; }, cart: function () { return Object.assign({}, state.cart); },
     folder: function (id) { return folders[id]; }, product: function (id) { return products[id]; },
     roots: function () { return children(null); }, children: children, path: path, isLine: isLine, lines: lines,

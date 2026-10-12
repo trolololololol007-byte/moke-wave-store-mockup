@@ -338,8 +338,9 @@
       var on = f.delivery === x.id;
       return '<label class="opt' + (on ? ' is-on' : '') + '"><input type="radio" name="delivery" value="' + x.id + '"' + (on ? ' checked' : '') + ' data-fk="dl-' + x.id + '"><span class="opt-dot"></span><span class="opt-t"><b>' + esc(x.title) + '</b><small>' + esc(x.hint) + '</small></span></label>';
     }).join('');
-    var fields = d ? '<div class="dfields">' + d.fields.map(fieldHTML).join('') +
-      (d.warning ? '<div class="alert alert-warn">' + I.warn + '<p>' + esc(d.warning) + '</p></div>' : '') + '</div>' : '';
+    var warn = SW.warning(f);
+    var fields = d ? '<div class="dfields">' + SW.fields(f).map(fieldHTML).join('') +
+      (warn ? '<div class="alert alert-warn">' + I.warn + '<p>' + esc(warn) + '</p></div>' : '') + '</div>' : '';
     var netErr = ui.netError ? '<div class="alert alert-err" role="alert">' + I.wifi + '<div><b>Не удалось отправить заказ</b><p>Похоже, пропало соединение. Корзина и данные сохранены.</p></div><button type="button" class="btn btn-sm" data-act="retry" data-fk="retry">Повторить</button></div>' : '';
     var compact = q.lines.map(function (l) { return '<li><span>' + esc(l.line.name) + ' <small>· ' + pcs(l.qty) + '</small></span><b>' + money(l.sum) + '</b></li>'; }).join('');
     return '<div class="view"><div class="sec-head"><h1>Оформление</h1><p class="muted small">Без регистрации. Подтверждение заказа — в Telegram.</p></div>' + netErr +
@@ -386,7 +387,7 @@
     var o = SW.lastOrder();
     if (!o) return '<div class="view">' + empty(I.receipt, 'Заказов пока нет', 'После оформления здесь появится номер заказа.', '<a class="btn btn-primary" href="#/">К списку товаров</a>') + '</div>';
     var q = o.quote, d = SW.delivery(o.form.delivery);
-    var details = d ? d.fields.map(function (f) { return o.form[f.id]; }).filter(Boolean).map(esc).join(', ') : '';
+    var details = d ? SW.fields(o.form).map(function (f) { return o.form[f.id]; }).filter(Boolean).map(esc).join(', ') : '';
     var items = q.lines.map(function (l) { return '<li><span>' + esc(l.line.name) + ' <small>· ' + pcs(l.qty) + '</small></span><b>' + money(l.sum) + '</b></li>'; }).join('');
     var newBlock = ui.confirmNew ?
       '<div class="confirm" role="group" aria-labelledby="confirm-t"><p id="confirm-t">Корзина и ваши данные будут очищены. Начать новый заказ?</p>' +
@@ -618,7 +619,7 @@
     if (revert) input.value = box.getAttribute('data-value');
   }
   var comboPicked = 0; // a pick re-renders the form and refocuses the field; the list must not reopen then
-  function comboPick(input, value) { comboPicked = Date.now(); comboClose(input); input.value = value; ui.form.city = value; delete ui.errors.city; SW.saveForm(ui.form); render(); }
+  function comboPick(input, value) { comboPicked = Date.now(); comboClose(input); input.value = value; ui.form.city = value; delete ui.errors.city; delete ui.errors.phone; SW.saveForm(ui.form); render(); }
   document.addEventListener('focusin', function (e) { if (e.target.matches('[data-combo-input]') && Date.now() - comboPicked > 300) { e.target.select(); comboShow(e.target); } });
   document.addEventListener('click', function (e) { if (e.target.matches('[data-combo-input]') && comboBox(e.target).querySelector('.combo-list').hidden) comboShow(e.target); });
   document.addEventListener('input', function (e) { if (e.target.matches('[data-combo-input]')) comboShow(e.target); });

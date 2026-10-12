@@ -68,7 +68,7 @@
         items: [[L.sour, 0, 10], [L.sour, 1, 8], [L.sour, 2, 6], [L.skala, 0, 5], [L.skala, 1, 5], [L.elfliq, 1, 4]],
         customerNote: 'Позвоните водителю заранее, пожалуйста.' },
       { number: 1123, receivedAt: '2026-10-10T09:15:00', customer: 'c2', kind: 'main', status: 'phone', tier: 10,
-        delivery: { type: 'minsk-minibus', phone: '+375 29 555-01-23' },
+        delivery: { type: 'minibus', city: 'Минск', phone: '+375 29 555-01-23' },
         items: [[L.bcpro, 0, 4], [L.duke, 0, 2], [L.duke, 1, 3], [L.lush, 0, 3]], customerNote: '' },
       { number: 1122, receivedAt: '2026-10-10T08:50:00', customer: 'c3', kind: 'main', status: 'accepted', tier: 50,
         delivery: { type: 'post', fullName: 'Ковалёв Сергей Петрович', address: 'г. Брест, ул. Советская, 10, кв. 5', postcode: '224005' },

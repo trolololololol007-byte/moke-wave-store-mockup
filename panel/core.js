@@ -12,7 +12,7 @@
   var SESSION_MS = 12 * 60 * 60 * 1000;
   var MUTE_MS = 5 * 60 * 1000;
   var MAX_TRIES = 3;
-  var KEY = 'swp-mock-v14';
+  var KEY = 'swp-mock-v15';
   var TRACK_RE = /^[A-Z]{2}\d{9}BY$/; // Belposhta tracking code: two letters, nine digits, BY (A-15)
 
   var STATUSES = [
@@ -26,12 +26,12 @@
   ];
   // BR-3: surcharges stay outside the delivery note (INV-4).
   var DELIVERY = [
-    { id: 'minibus', label: 'Маршрутка', group: 'minibus', surcharge: 0, note: 'Около 10 BYN клиент отдаёт водителю сверх накладной' },
+    { id: 'minibus', label: 'Маршрутка', group: 'minibus', surcharge: 0, note: 'Минск: доплата 5 BYN и телефон для водителя. Другие города: около 10 BYN клиент отдаёт водителю сверх накладной' },
     { id: 'post', label: 'Почта', group: 'post', surcharge: 10, note: 'Белпочта: предоплата, к оплате сумма накладной + 10 BYN' },
-    { id: 'minsk-minibus', label: 'Минск', group: 'minibus', surcharge: 5, note: 'Доплата 5 BYN, нужен согласованный телефон' },
     { id: 'minsk-address', label: 'Адрес', group: 'minibus', surcharge: 15, note: 'Минск, курьер на адрес: доплата 15 BYN' }
   ];
-  var CITIES = ['Брест', 'Витебск', 'Гомель', 'Гродно', 'Могилёв', 'Барановичи', 'Бобруйск', 'Борисов', 'Лида', 'Молодечно', 'Мозырь', 'Новополоцк', 'Орша', 'Пинск', 'Полоцк', 'Солигорск'];
+  var MINSK = 'Минск'; // a minibus to Minsk needs the driver's phone and adds 5 BYN; it is not a delivery type of its own
+  var CITIES = [MINSK, 'Брест', 'Витебск', 'Гомель', 'Гродно', 'Могилёв', 'Барановичи', 'Бобруйск', 'Борисов', 'Лида', 'Молодечно', 'Мозырь', 'Новополоцк', 'Орша', 'Пинск', 'Полоцк', 'Солигорск'];
 
   /* ---------- catalog ---------- */
   var folders = {}, products = {}, byLine = {};
@@ -68,7 +68,7 @@
         });
         return { number: o.number, receivedAt: o.receivedAt, customer: o.customer, siteTag: o.siteTag || '', kind: o.kind, original: o.original || null,
           status: o.status, tier: o.tier, delivery: JSON.parse(JSON.stringify(o.delivery)), items: items, deduction: 0,
-          customerNote: o.customerNote || '', managerNote: '', tracking: o.tracking || '', surcharge: 15, phoneApproved: o.status !== 'phone' && o.delivery.type === 'minsk-minibus',
+          customerNote: o.customerNote || '', managerNote: '', tracking: o.tracking || '', surcharge: 15, phoneApproved: o.status !== 'phone' && o.delivery.type === 'minibus' && o.delivery.city === MINSK,
           packingText: '', remoteChanged: false, pendingRetry: false };
       }),
       customers: JSON.parse(JSON.stringify(D.customers)),
@@ -212,10 +212,10 @@
       hasHistory: lines.some(function (l) { return l.customer; }), blockers: [], warnings: [] };
 
     if (o.status === 'new') res.blockers.push(o.offered ? 'Клиент выбирает другой способ доставки в боте' : 'Клиент ещё не подтвердил заказ в боте');
-    else if (o.status === 'phone' || (o.delivery.type === 'minsk-minibus' && !o.phoneApproved && !o.manual)) res.blockers.push('Телефон для доставки по Минску не согласован');
+    else if (o.status === 'phone') res.blockers.push('Телефон для маршрутки по Минску не согласован');
     else if (!editable(o)) res.blockers.push('Заказ уже обработан');
     if (o.manual && o.customer === 'retail') res.blockers.push('Не выбран контрагент');
-    var need = { minibus: [['city', 'город']], 'minsk-minibus': [['phone', 'телефон для водителя']], 'minsk-address': [['address', 'адрес']],
+    var need = { minibus: [['city', 'город']].concat(isMinsk(o) ? [['phone', 'телефон для водителя']] : []), 'minsk-address': [['address', 'адрес']],
       post: [['fullName', 'ФИО получателя'], ['postcode', 'индекс'], ['address', 'адрес']] }[o.delivery.type];
     need.forEach(function (f) { if (!String(o.delivery[f[0]] || '').trim()) res.blockers.push('Не заполнена доставка: ' + f[1]); });
     if (!rows.length) res.blockers.push('В накладной нет товаров');
@@ -288,10 +288,13 @@
     touch(order(n), function (o) {
       o.delivery.type = type;
       if (type === 'minibus' && !o.delivery.city) o.delivery.city = '';
-      if (type !== 'minsk-minibus') o.phoneApproved = false;
+      leavePhoneCheck(o);
     });
   }
-  function setDeliveryField(n, field, value) { touch(order(n), function (o) { o.delivery[field] = value; }); }
+  function setDeliveryField(n, field, value) { touch(order(n), function (o) { o.delivery[field] = value; leavePhoneCheck(o); }); }
+  function isMinsk(o) { return o.delivery.type === 'minibus' && o.delivery.city === MINSK; }
+  // The phone check exists only for a minibus to Minsk; changing the city or the type ends it.
+  function leavePhoneCheck(o) { if (!isMinsk(o)) { o.phoneApproved = false; if (o.status === 'phone') o.status = 'accepted'; } }
 
   /* ---------- packing-group message (BR-4, S-5, S-6) ---------- */
   function intBYN(n) { return String(r2(n)).replace('.', ','); }
@@ -303,8 +306,7 @@
     if (orig && ['packed', 'dispatched'].indexOf(orig.status) >= 0) rows = [o.number, 'Добавить к ' + orig.number, '+' + intBYN(c.total) + ' BYN'];
     else if (d.type === 'post') rows = [o.number, d.fullName, d.address, d.postcode, o.tracking];
     else if (d.type === 'minsk-address') rows = [o.number, who, d.address, intBYN(c.total) + (c.surcharge ? '+' + intBYN(c.surcharge) : '') + ' BYN'];
-    else if (d.type === 'minsk-minibus') rows = [o.number, 'Минск', who, intBYN(c.total) + '+5 BYN'];
-    else rows = [o.number, d.city, who, intBYN(c.total) + ' BYN'];
+    else rows = [o.number, d.city, who, intBYN(c.total) + (isMinsk(o) ? '+5' : '') + ' BYN']; // BR-4: the Minsk minibus adds its 5 BYN
     if (o.customerNote.trim()) rows.push(o.customerNote.trim());
     if (o.managerNote.trim()) rows.push(o.managerNote.trim());
     return rows.filter(function (x) { return x !== '' && x != null; }).join('\n');
@@ -585,6 +587,7 @@
     on: on, reset: reset, get flags() { return state.flags; }, setFlag: function (k, v) { state.flags[k] = v; emit(); },
     session: session, signIn: signIn, signOut: signOut, muteLeft: muteLeft, expireSession: expireSession, endMute: endMute,
     security: function () { return state.security.slice(); },
+    isMinsk: isMinsk,
     order: order, customer: customer, customerById: customerById, renameCustomer: renameCustomer, setOrderCustomer: setOrderCustomer,
     customerOrders: customerOrders, findCustomers: findCustomers, status: status, delivery: delivery, editable: editable, compute: compute, queue: queue,
     undoPrice: undoPrice, canUndoPrice: canUndoPrice, TRACK_RE: TRACK_RE,

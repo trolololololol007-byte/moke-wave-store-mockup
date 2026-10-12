@@ -228,8 +228,9 @@
         '<div class="combo" data-combo="city" data-value="' + esc(d.city || '') + '" data-options="' + esc(JSON.stringify(SWP.CITIES)) + '">' +
         '<input id="d-city" type="text" role="combobox" aria-autocomplete="list" aria-expanded="false" autocomplete="off" data-combo-input data-fk="d-city" placeholder="Выберите или введите город" value="' + esc(d.city || '') + '">' +
         '<ul class="combo-list" role="listbox" hidden></ul></div>') + '</div>';
-    if (d.type === 'minsk-minibus') fields = field('phone', 'Телефон для водителя', ' type="tel"') +
-      '<p class="alert ' + (o.phoneApproved ? 'notice' : 'alert-warn') + ' wide" style="margin:0">' + (o.phoneApproved ? I.check + '<span>Телефон согласован</span>' : I.warn + '<span>Телефон ещё не согласован. Обработать заказ можно только после согласования.</span>') + '</p>';
+    if (SWP.isMinsk(o)) fields += field('phone', 'Телефон для водителя', ' type="tel"') +
+      (o.status === 'phone' ? '<p class="alert alert-warn wide" style="margin:0">' + I.warn + '<span>Телефон ещё не согласован. Обработать заказ можно только после согласования.</span></p>'
+        : o.phoneApproved ? '<p class="alert notice wide" style="margin:0">' + I.check + '<span>Телефон согласован</span></p>' : '');
     if (d.type === 'minsk-address') fields = field('address', 'Адрес доставки');
     if (d.type === 'post') fields = field('fullName', 'ФИО получателя') + field('postcode', 'Индекс', ' inputmode="numeric"') + field('address', 'Адрес с городом') +
       '<div class="field"><label for="tracking">Трек-код Белпочты</label><input id="tracking" data-ofield="tracking" data-fk="tracking" value="' + esc(o.tracking) + '" placeholder="PC123456789BY"' + dis +
@@ -281,7 +282,7 @@
       : '<div class="alert alert-warn">' + I.warn + '<p>Вы меняете заказ, который уже у упаковщиков. После сохранения старое сообщение с накладной в группе удалится и уйдёт новое.' +
         (c.blockers.length ? ' Сейчас сохранить нельзя: ' + esc(c.blockers[0]) + '.' : '') + '</p></div>';
     if (o.manual && SWP.editable(o) && o.status === 'accepted') banners += '<div class="alert alert-warn">' + I.warn + '<p>Заказ создан вручную. Выберите контрагента, заполните доставку и добавьте товары через поиск под списком.</p></div>';
-    if (o.status === 'packed') banners += '<div class="alert alert-warn">' + I.check + '<p>Заказ упакован, изменить его уже нельзя. Его можно отправить клиенту или удалить: при удалении упаковщики получат «Разобрать».</p></div>';
+    if (o.status === 'packed') banners += '<div class="alert alert-warn">' + I.check + '<p>Заказ упакован, изменить его уже нельзя. ' + (o.delivery.type === 'post' ? 'Когда посылку отнесут на почту, отметьте это в задаче «Проверить отправку почты».' : 'Когда заказ уедет, сообщите об этом клиенту на вкладке «Отправка».') + ' Заказ можно удалить: упаковщики получат «Разобрать».</p></div>';
     if (o.status === 'payment') banners += '<div class="alert alert-warn">' + I.warn + '<p>Заказ ждёт оплаты. Клиент прислал чек: <span class="pdf">' + I.file + 'Чек об оплате.jpg</span></p>' +
       '<button class="btn btn-primary btn-sm" type="button" data-act="receipt-ok" data-fk="receipt-ok">Подтвердить чек и отправить в группу</button><button class="btn btn-sm" type="button" data-act="receipt-no" data-fk="receipt-no">Отклонить чек</button></div>';
     if (cust.id === 'retail' && !o.manual) banners += '<div class="alert alert-warn">' + I.warn + '<p>Клиент ещё не подтвердил заказ в боте, поэтому контрагент «Розничный покупатель». Тег с сайта: ' + esc(o.siteTag) + '.</p></div>';
