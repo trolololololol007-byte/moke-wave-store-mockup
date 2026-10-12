@@ -286,8 +286,8 @@
     if (o.status === 'packed') banners += '<div class="alert alert-warn">' + I.check + '<p>Заказ упакован, изменить его уже нельзя. ' + (o.delivery.type === 'post' ? 'Когда посылку отнесут на почту, отметьте это в задаче «Проверить отправку почты».' : 'Когда заказ уедет, сообщите об этом клиенту на вкладке «Отправка».') + ' Заказ можно удалить: упаковщики получат «Разобрать».</p></div>';
     if (o.status === 'payment' && !o.paid) banners += '<div class="alert alert-warn">' + I.warn + '<p>Накладная и реквизиты отправлены, заказ ждёт оплаты. Клиент прислал чек: <span class="pdf">' + I.file + 'Чек об оплате.jpg</span></p>' +
       '<button class="btn btn-primary btn-sm" type="button" data-act="receipt-ok" data-fk="receipt-ok">Подтвердить чек</button><button class="btn btn-sm" type="button" data-act="receipt-no" data-fk="receipt-no">Отклонить чек</button></div>';
-    if (o.status === 'payment' && o.paid) banners += '<div class="alert alert-warn">' + I.check + '<p>Оплата подтверждена. Введите трек-код в блоке «Доставка» и отправьте заказ на сборку.</p>' +
-      '<button class="btn btn-primary btn-sm' + (c.trackingBad ? ' is-off' : '') + '" type="button" data-act="pack-paid" data-fk="pack-paid">Отправить на сборку</button></div>';
+    if (o.status === 'payment' && o.paid) banners += '<div class="alert alert-warn">' + I.check + '<p>Оплата подтверждена. Введите трек-код в блоке «Доставка» и нажмите «Отправить на сборку» внизу карточки.</p>' +
+      '<button class="btn btn-sm" type="button" data-act="return-edit" data-fk="return-edit">Вернуть на редактирование</button></div>';
     if (cust.id === 'retail' && !o.manual) banners += '<div class="alert alert-warn">' + I.warn + '<p>Клиент ещё не подтвердил заказ в боте, поэтому контрагент «Розничный покупатель». Тег с сайта: ' + esc(o.siteTag) + '.</p></div>';
 
     var suggest = c.suggest && !ro ? '<div class="notice is-warn">' + I.warn + '<span>В заказе ' + c.units + ' шт, это уровень «от ' + c.suggest + '», а цены стоят по уровню «от ' + o.tier + '». Цены сами не меняются.</span>' +
@@ -301,7 +301,9 @@
       }).join('') + '</ul>' : '<p class="muted small" style="margin:0">Ничего не найдено среди товаров в наличии.</p>') : '');
 
     var cta;
-    if (o.status === 'packing') cta = locked ? '' : '<div class="sticky-cta s-cta">' +
+    if (o.status === 'payment' && o.paid) cta = '<div class="sticky-cta s-cta">' + // the main action of a paid Belposhta order sits where "Process" is
+      '<button class="btn btn-primary btn-lg btn-block' + (c.trackingBad ? ' is-off' : '') + '" type="button" data-act="pack-paid" data-fk="pack-paid">Отправить на сборку</button></div>';
+    else if (o.status === 'packing') cta = locked ? '' : '<div class="sticky-cta s-cta">' +
       '<button class="btn btn-primary btn-lg btn-block" type="button" data-act="resend-edit" data-fk="resend-edit"' + (!o.dirty || c.blockers.length || c.trackingBad ? ' disabled' : '') + '>' + (o.dirty ? 'Сохранить и отправить новую накладную' : 'Изменений нет') + '</button></div>';
     else cta = ro ? '' : '<div class="sticky-cta s-cta">' +
       (c.blockers.length ? '<ul class="blockers" id="blockers">' + c.blockers.map(function (b) { return '<li>' + esc(b) + '</li>'; }).join('') + '</ul>' : '') +
@@ -341,7 +343,8 @@
   /* ---------- order actions and the "Dispatch" tab (A-13, A-18, A-26, A-27) ---------- */
   function actionsHTML(o) {
     var b = [];
-    if (SWP.canReturn(o)) b.push('<button class="btn btn-sm" type="button" data-act="return-edit" data-fk="return-edit">Вернуть на редактирование</button>');
+    if (SWP.canReturn(o) && !(o.status === 'payment' && o.paid)) b.push( // for a paid Belposhta order this button is in the banner at the top
+      '<button class="btn btn-sm" type="button" data-act="return-edit" data-fk="return-edit">Вернуть на редактирование</button>');
     var only = !b.length;
     b.push('<button class="btn btn-sm btn-danger a-del" type="button" data-act="delete" data-fk="delete">Удалить заказ</button>'); // A-18: at any stage
     return b.length ? '<section class="sec s-acts' + (only ? ' only-del' : '') + '"><h2 class="h2">Действия</h2><div class="task-acts">' + b.join('') + '</div></section>' : '';
