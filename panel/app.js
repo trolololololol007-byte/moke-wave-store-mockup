@@ -233,7 +233,7 @@
         : o.phoneApproved ? '<p class="alert notice wide" style="margin:0">' + I.check + '<span>Телефон согласован</span></p>' : '');
     if (d.type === 'minsk-address') fields = field('address', 'Адрес доставки');
     if (d.type === 'post') fields = field('fullName', 'ФИО получателя') + field('postcode', 'Индекс', ' inputmode="numeric"') + field('address', 'Адрес с городом') +
-      '<div class="field"><label for="tracking">Трек-код Белпочты</label><input id="tracking" data-fk="tracking" value="' + esc(o.tracking) + '" placeholder="PC123456789BY"' + (o.status === 'payment' && o.paid ? '' : ' disabled') +
+      '<div class="field wide"><label for="tracking">Трек-код Белпочты</label><input id="tracking" data-fk="tracking" value="' + esc(o.tracking) + '" placeholder="PC123456789BY"' + (o.status === 'payment' && o.paid ? '' : ' disabled') +
       ' autocapitalize="characters" autocomplete="off" spellcheck="false"' + (ui.trackErr ? ' aria-invalid="true" aria-describedby="track-err"' : '') + '>' +
       (ui.trackErr ? '<p class="err" id="track-err" role="alert">Трек-код введён неверно. Нужны 2 латинские буквы, 9 цифр и BY, например PC123456789BY.</p>'
         : '<p class="help">' + (o.status === 'payment' && o.paid ? '2 латинские буквы, 9 цифр и BY.' : o.paid ? '' : 'Вводится после подтверждения чека об оплате.') + '</p>') + '</div>';
@@ -679,6 +679,7 @@
       : queueHTML();
     patch(main, html);
     if (r.name === 'chats') { var keepScroll = ui.chatShown === r.id; fitChat(); if (!keepScroll) { scrollChat(); ui.chatShown = r.id; } } else ui.chatShown = null;
+    fitSide();
     patch($('#demo'), demoHTML());
     themeIcon(); renderDialog();
   }
@@ -706,6 +707,14 @@
     box.style.height = Math.max(300, window.innerHeight - top - reserve) + 'px';
   }
   window.addEventListener('resize', fitChat);
+  // On desktop the right column of the order card ends at the bottom of the screen, so its main action is visible without scrolling the page.
+  function fitSide() {
+    var side = $('.o-side'); if (!side) return;
+    if (getComputedStyle(side).position !== 'sticky') { side.style.maxHeight = ''; return; }
+    side.style.maxHeight = Math.max(320, window.innerHeight - Math.max(12, side.getBoundingClientRect().top) - 12) + 'px';
+  }
+  window.addEventListener('resize', fitSide);
+  window.addEventListener('scroll', fitSide, { passive: true });
   function unflag(n, lineId) { if (ui.red[n]) delete ui.red[n][lineId]; } // the manager priced the line, the red mark goes away
   function startProcess(n) { ui.dialog = { type: 'preview', n: n }; renderDialog(); }
   var ACT = {
