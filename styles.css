@@ -103,7 +103,6 @@ input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-app
 .rail, .panel { display: none; }
 .center { min-width: 0; }
 .mark { width: 40px; height: 40px; border-radius: 12px; display: inline-grid; place-items: center; flex: none; background: var(--accent); color: var(--accent-fg); font-weight: 800; font-size: 15px; letter-spacing: -.02em; }
-.mark-logo { border-radius: 50%; background: #000; object-fit: cover; box-shadow: 0 0 0 1px var(--line); }
 
 .top {
   position: sticky; top: calc(-1 * var(--brand-h)); z-index: 30;
