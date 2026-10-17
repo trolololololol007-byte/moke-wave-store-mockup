@@ -10,7 +10,7 @@
   var ui = {
     filter: { q: '', status: '', delivery: '', from: '', to: '', action: false, sort: 'receivedAt', dir: 'desc' },
     menu: null,      // line id whose price-list menu is open
-    tab: 'note',     // order card tab: 'note' | 'dispatch'
+    tab: 'note',     // order card tab: 'note' | 'dispatch' | 'progress'
     files: [],       // mock attachments on the "Dispatch" tab
     refundFile: {},  // tasks: mock receipt attached to a refund, keyed by refund id
     chatFiles: [],   // chats: mock attachments of the message being written
@@ -27,7 +27,7 @@
     showKey: false,  // sign-in: show the typed key
     open: {},        // expanded product lines, keyed "orderNumber:lineId"
     addQ: '',        // product search at the bottom of the delivery note
-    dialog: null,    // { type: 'preview' | 'packing' | 'conflict' | 'customer' | 'ask', n, error, text, q, name, title, options }
+    dialog: null,    // { type: 'preview' | 'packing' | 'conflict' | 'customer' | 'ask' | 'receipt', n, error, text, q, name, title, options, step, reason, amount }
     loginError: '',
     demoOpen: false,
     undo: null       // last removed item: { n, item }
@@ -58,7 +58,9 @@
     warn: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4 2.8 19.5h18.4L12 4Z"/><path d="M12 10v4.5M12 17v.5"/></svg>',
     flask: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6M10 3v6L5 18a2 2 0 0 0 1.8 3h10.4A2 2 0 0 0 19 18l-5-9V3"/><path d="M7.5 14h9"/></svg>',
     trash: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M10 7V5h4v2M7 7l1 13h8l1-13"/></svg>',
-    file: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h8l4 4v14H6V3Z"/><path d="M14 3v4h4M9 13h6M9 17h6"/></svg>'
+    file: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h8l4 4v14H6V3Z"/><path d="M14 3v4h4M9 13h6M9 17h6"/></svg>',
+    download: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10.5l5 5 5-5M5 20h14"/></svg>',
+    receipt: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Z"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>'
   };
   var PILL = { new: '', phone: 'is-warn', accepted: 'is-act', processed: 'is-soft', payment: 'is-warn', packing: 'is-soft', packed: 'is-ok', dispatched: 'is-ok' };
 
@@ -284,8 +286,7 @@
         (c.blockers.length ? ' Сейчас сохранить нельзя: ' + esc(c.blockers[0]) + '.' : '') + '</p></div>';
     if (o.manual && SWP.editable(o) && o.status === 'accepted') banners += '<div class="alert alert-warn">' + I.warn + '<p>Заказ создан вручную. Выберите контрагента, заполните доставку и добавьте товары через поиск под списком.</p></div>';
     if (o.status === 'packed') banners += '<div class="alert alert-warn">' + I.check + '<p>Заказ упакован, изменить его уже нельзя. ' + (o.delivery.type === 'post' ? 'Когда посылку отнесут на почту, отметьте это в задаче «Проверить отправку почты».' : 'Когда заказ уедет, сообщите об этом клиенту на вкладке «Отправка».') + ' Заказ можно удалить: упаковщики получат «Разобрать».</p></div>';
-    if (o.status === 'payment' && !o.paid) banners += '<div class="alert alert-warn">' + I.warn + '<p>Накладная и реквизиты отправлены, заказ ждёт оплаты. Клиент прислал чек: <span class="pdf">' + I.file + 'Чек об оплате.jpg</span></p>' +
-      '<button class="btn btn-primary btn-sm" type="button" data-act="receipt-ok" data-fk="receipt-ok">Подтвердить чек</button><button class="btn btn-sm" type="button" data-act="receipt-no" data-fk="receipt-no">Отклонить чек</button></div>';
+    if (o.status === 'payment' && !o.paid) banners += receiptBanner(o);
     if (o.status === 'payment' && o.paid) banners += '<div class="alert alert-warn">' + I.check + '<p>Оплата подтверждена. Введите трек-код в блоке «Доставка» и нажмите «Отправить на сборку» внизу карточки.</p>' +
       '<button class="btn btn-sm" type="button" data-act="return-edit" data-fk="return-edit">Вернуть на редактирование</button></div>';
     if (cust.id === 'retail' && !o.manual) banners += '<div class="alert alert-warn">' + I.warn + '<p>Клиент ещё не подтвердил заказ в боте, поэтому контрагент «Розничный покупатель». Тег с сайта: ' + esc(o.siteTag) + '.</p></div>';
@@ -312,18 +313,20 @@
       '<button class="btn btn-primary btn-lg btn-block' + (c.trackingBad && !c.blockers.length ? ' is-off' : '') + '" type="button" data-act="process" data-fk="process"' + (c.blockers.length ? ' disabled aria-describedby="blockers"' : '') + '>Обработать · ' + money(c.total) + '</button></div>';
 
     // A-27: after processing a minibus order gets the "Dispatch" tab; Belposhta is dispatched from the daily task (A-31).
-    var hasTabs = o.delivery.type !== 'post' && ['packing', 'packed', 'dispatched'].indexOf(o.status) >= 0;
-    var tab = hasTabs && ui.tab === 'dispatch' ? 'dispatch' : 'note';
-    var tabs = hasTabs ? '<div class="seg o-tabs" role="tablist">' + [['note', 'Накладная'], ['dispatch', 'Отправка']].map(function (t) {
+    // A-34: every order has the "Progress" tab with its stages and the log of actions.
+    var list = [['note', 'Накладная']].concat(o.delivery.type !== 'post' && ['packing', 'packed', 'dispatched'].indexOf(o.status) >= 0 ? [['dispatch', 'Отправка']] : []).concat([['progress', 'Прогресс']]);
+    var tab = list.some(function (t) { return t[0] === ui.tab; }) ? ui.tab : 'note';
+    var tabs = '<div class="seg o-tabs" role="tablist" style="grid-template-columns: repeat(' + list.length + ', 1fr)">' + list.map(function (t) {
       return '<button type="button" role="tab" class="seg-btn' + (tab === t[0] ? ' is-on' : '') + '" data-act="tab" data-t="' + t[0] + '" data-fk="tab-' + t[0] + '" aria-selected="' + (tab === t[0]) + '">' + t[1] + '</button>';
-    }).join('') + '</div>' : '';
+    }).join('') + '</div>';
     var head = '<div class="pg o-pg"><a class="back" href="#/">' + I.chev + 'Заказы</a>' +
       '<div class="o-head"><div class="o-title"><h1>Заказ ' + o.number + '</h1>' + pill(o) + kindTag(o) + '</div>' +
       '<p class="o-who"><button type="button" class="who-btn" data-act="customer" data-fk="who">' + I.user + '<b>' + esc(who(o)) + '</b></button>' + (cust.blocked ? '<span class="tag is-bad">заблокирован</span>' : '') + (cust.id !== 'retail' && !cust.tgId ? '<span class="tag">без Telegram</span>' : '') + (cust.person ? '<span>' + esc(cust.person) + '</span>' : '') +
       (SWP.chatOf(o.customer) ? '<a class="who-btn" href="#/chats/' + o.customer + '">' + I.chat + 'Чат</a>' : '') +
       '<span class="muted">поступил ' + SWP.dateTime(o.receivedAt) + '</span></p>' +
-      '<button class="btn btn-sm btn-danger o-del" type="button" data-act="delete" data-fk="delete-top">' + I.trash + 'Удалить заказ</button></div>' + banners + tabs;
+      '<div class="o-tools">' + docsHTML(o) + '<button class="btn btn-sm btn-danger o-del" type="button" data-act="delete" data-fk="delete-top">' + I.trash + 'Удалить заказ</button></div></div>' + banners + tabs;
     if (tab === 'dispatch') return head + dispatchHTML(o) + '</div>';
+    if (tab === 'progress') return head + progressHTML(o) + '</div>';
     return head +
       '<div class="o-grid">' +
       '<div class="o-main"><section class="sec s-goods"><div class="sec-row"><h2 class="h2">Товары <small class="muted">' + c.lines.length + ' лин. · ' + c.units + ' шт</small></h2>' +
@@ -339,6 +342,71 @@
       '<div class="field"><label for="n-c">Заметка клиента</label><textarea id="n-c" data-ofield="customerNote" data-fk="n-c"' + dis + '>' + esc(o.customerNote) + '</textarea></div>' +
       '<div class="field"><label for="n-m">Заметка менеджера</label><textarea id="n-m" data-ofield="managerNote" data-fk="n-m"' + dis + '>' + esc(o.managerNote) + '</textarea></div>' +
       '<p class="help">Обе заметки попадут в сообщение упаковщикам.</p></section>' + actionsHTML(o) + cta + '</aside></div></div>';
+  }
+
+  /* ---------- documents, receipt check and the "Progress" tab (A-15, A-34, A-35) ---------- */
+  // The buttons appear once the document exists: the delivery note after processing, the receipt once the customer sent one.
+  // A receipt waiting for a check is opened from the banner instead, where the action is asked for.
+  function docsHTML(o) {
+    var r = SWP.lastReceipt(o), b = '';
+    if (SWP.hasNote(o)) b += '<button class="btn btn-sm" type="button" data-act="note-dl" data-fk="note-dl">' + I.download + 'Скачать накладную</button>';
+    if (r && !(o.status === 'payment' && SWP.pendingReceipt(o))) b += '<button class="btn btn-sm" type="button" data-act="receipt-open" data-fk="receipt-view">' + I.receipt + 'Открыть чек</button>';
+    return b;
+  }
+  function receiptBanner(o) {
+    var r = SWP.lastReceipt(o), due = SWP.money(o.due || SWP.compute(o).total + 10);
+    if (r && r.state === 'pending') return '<div class="alert alert-warn">' + I.warn + '<p>Клиент прислал ' + (r.extra ? 'чек доплаты' : o.receipts.length > 1 ? 'новый чек' : 'чек об оплате') + ' ' + SWP.dateTime(r.at) + '. Откройте его, сверьте сумму и получателя, затем подтвердите или отклоните.</p>' +
+      '<button class="btn btn-primary btn-sm" type="button" data-act="receipt-open" data-fk="receipt-open">' + I.receipt + 'Открыть чек</button></div>';
+    if (r && r.state === 'rejected') return '<div class="alert alert-warn">' + I.warn + '<p><b>Чек отклонён: ' + esc(SWP.REJECT[r.reason].toLowerCase()) + '.</b> ' +
+      (r.reason === 'short' ? 'Клиента попросили доплатить ' + SWP.money(r.missing) : 'Клиента попросили провести платёж ещё раз') + ' и прислать новый чек. Когда он придёт, проверка появится здесь.</p></div>';
+    return '<div class="alert alert-warn">' + I.warn + '<p>Накладная и реквизиты отправлены, к оплате ' + due + '. Ждём чек от клиента: когда он придёт, здесь появится «Открыть чек»./p></div>';
+  }
+  function progressHTML(o) {
+    var path = SWP.stagePath(o), cur = path.map(function (s) { return s.id; }).indexOf(o.status);
+    var stages = path.map(function (s, i) {
+      var at = o.stages[s.id], st = i < cur ? 'is-done' : i === cur ? 'is-now' : 'is-next';
+      var note = i < cur ? (at ? SWP.dateTime(at) : 'пропущена') : i === cur ? 'Сейчас' + (at ? ', с ' + SWP.dateTime(at) : '') + (s.id === 'payment' && o.paid ? ' · оплата подтверждена' : '') : 'Впереди';
+      return '<li class="stg-i ' + st + '"' + (i === cur ? ' aria-current="step"' : '') + '><span class="stg-dot" aria-hidden="true">' + (i < cur ? I.check : i + 1) + '</span>' +
+        '<span class="stg-t"><b>' + esc(s.label) + '</b><small>' + note + '</small></span></li>';
+    }).join('');
+    var log = o.log.slice().reverse().map(function (x) {
+      return '<li><time datetime="' + x.at + '">' + SWP.dateTime(x.at) + '</time><span><b>' + esc(x.who) + '</b> ' + esc(x.text.charAt(0).toLowerCase() + x.text.slice(1)) + '</span></li>';
+    }).join('');
+    return '<section class="sec"><h2 class="h2">Стадии заказа</h2><ol class="stg">' + stages + '</ol>' +
+      '<p class="help">Пройденные стадии отмечены временем перехода, текущая выделена, предстоящие серые. Набор стадий зависит от доставки: телефон согласуют только для маршрутки по Минску, оплату ждут только у Белпочты.</p></section>' +
+      '<section class="sec"><h2 class="h2">Журнал действий <small class="muted">' + o.log.length + '</small></h2><ol class="log">' + log + '</ol></section>';
+  }
+  function receiptDialogHTML(d, o, head) {
+    var r = SWP.lastReceipt(o);
+    if (!r) return head('Чек по заказу ' + o.number) + '<div class="sheet-body dlg-body"><p>Клиент ещё не прислал чек.</p></div>';
+    var pending = r.state === 'pending' && o.status === 'payment' && !o.paid;
+    var paper = '<figure class="rcpt"><div class="rcpt-paper" aria-hidden="true"><b>Квитанция об оплате</b><small>Интернет-банк</small><dl>' +
+      '<div><dt>Дата</dt><dd>' + SWP.dateTime(r.at) + '</dd></div><div><dt>Получатель</dt><dd>ИП Образец О. О.</dd></div>' +
+      '<div><dt>Назначение</dt><dd>оплата заказа ' + o.number + '</dd></div><div class="rcpt-sum"><dt>Сумма</dt><dd>' + SWP.money(r.amount) + '</dd></div></dl><span class="rcpt-ok">Успешно</span></div>' +
+      '<figcaption><span class="pdf">' + I.file + esc(r.file) + '</span><span class="muted small">Прислан в боте ' + SWP.dateTime(r.at) + '</span></figcaption></figure>';
+    var due = '<dl class="totals rcpt-due"><div class="t-sum"><dt>' + (r.extra ? 'Доплата по заказу' : 'К оплате по заказу') + ' <small>' + (r.extra ? 'после отклонённого чека' : 'накладная + 10 BYN') + '</small></dt><dd>' + SWP.money(r.due) + '</dd></div></dl>';
+    var state = r.state === 'approved' ? '<div class="notice">' + I.check + '<span>Чек подтверждён.</span></div>'
+      : r.state === 'rejected' ? '<div class="notice is-warn">' + I.warn + '<span>Чек отклонён: ' + esc(SWP.REJECT[r.reason] ? SWP.REJECT[r.reason].toLowerCase() : 'заказ переведён на маршрутку') + '.</span></div>' : '';
+    if (d.step !== 'reject') {
+      return head('Чек по заказу ' + o.number) + '<div class="sheet-body dlg-body"><div class="rcpt-grid">' + paper + '<div class="rcpt-side">' + due + state +
+        (pending ? '<p class="help">Сверьте сумму и получателя на чеке с суммой к оплате. Панель не читает чек сама.</p>' : '') + '</div></div></div>' +
+        (pending ? '<div class="sheet-foot dlg-foot"><button class="btn btn-primary" type="button" data-act="receipt-ok" data-fk="rc-ok">Подтвердить чек</button><button class="btn btn-danger" type="button" data-act="receipt-no" data-fk="rc-no">Отклонить чек</button></div>'
+          : '<div class="sheet-foot dlg-foot"><button class="btn" type="button" data-act="dialog-close" data-fk="rc-close">Закрыть</button></div>');
+    }
+    var short = d.reason === 'short', amount = SWP.missingAmount(d.amount);
+    var text = d.reason ? SWP.rejectText(o, d.reason, short ? (amount > 0 ? amount : 0) : 0) : '';
+    return head('Отклонить чек по заказу ' + o.number) + '<div class="sheet-body dlg-body">' +
+      '<fieldset class="rj"><legend class="h3">Причина отклонения</legend><div class="rj-opts" role="radiogroup">' +
+      [['short', 'Сумма меньше требуемой', 'Клиент доплатит недостающую сумму и пришлёт чек доплаты'], ['failed', 'Оплата не прошла', 'Клиент проведёт платёж ещё раз и пришлёт новый чек']].map(function (x) {
+        return '<button type="button" role="radio" class="rj-opt' + (d.reason === x[0] ? ' is-on' : '') + '" aria-checked="' + (d.reason === x[0]) + '" data-act="rj-reason" data-r="' + x[0] + '" data-fk="rj-' + x[0] + '"><b>' + x[1] + '</b><small>' + x[2] + '</small></button>';
+      }).join('') + '</div></fieldset>' +
+      (short ? '<div class="field"><label for="rj-amount">Сколько не хватает, BYN</label><span class="lp rj-amount"><input id="rj-amount" type="text" inputmode="decimal" autocomplete="off" data-fk="rj-amount" value="' + esc(d.amount || '') + '" placeholder="Например, 5"' + (d.error ? ' aria-invalid="true" aria-describedby="rj-err"' : '') + '></span>' +
+        '<p class="help">К оплате было ' + SWP.money(r.due) + '. Эту сумму клиент получит в боте.</p></div>' : '') +
+      (d.error ? '<p class="err" id="rj-err" role="alert">' + esc(d.error) + '</p>' : '') +
+      (d.reason ? '<div class="field"><span class="h3">Клиент получит в боте</span><p class="msg-ro">' + esc(text) + '</p></div>' +
+        '<p class="help">Заказ останется «Ожидает оплаты». Когда клиент пришлёт новый чек, его снова нужно будет проверить.</p>' : '') +
+      '<div class="rj-alt"><span class="muted small">Клиент не может оплатить почтой?</span><button class="btn btn-sm" type="button" data-act="receipt-minibus" data-fk="rj-minibus">Перевести на маршрутку</button></div></div>' +
+      '<div class="sheet-foot dlg-foot"><button class="btn btn-danger" type="button" data-act="rj-send" data-fk="rj-send"' + (d.reason ? '' : ' disabled') + '>Отклонить и написать клиенту</button><button class="btn" type="button" data-act="rj-back" data-fk="rj-back">Назад</button></div>';
   }
 
   /* ---------- order actions and the "Dispatch" tab (A-13, A-18, A-26, A-27) ---------- */
@@ -532,6 +600,7 @@
         '<button class="btn btn-primary btn-sm" type="button" data-act="refund-paid" data-id="' + t.rid + '" data-fk="rp-' + t.rid + '">Возврат оплачен</button>';
     }
     if (t.type === 'custom') return order + chat + '<button class="btn btn-primary btn-sm" type="button" data-act="custom-done" data-id="' + t.uid + '" data-fk="cd-' + t.uid + '">Готово</button>';
+    if (t.type === 'receipt') return order + chat + '<button class="btn btn-primary btn-sm" type="button" data-act="receipt-open" data-n="' + t.n + '" data-fk="ro-' + t.n + '">' + I.receipt + 'Открыть чек</button>';
     return order + chat;
   }
   function taskDialogHTML(d, head) { // a manager's own task tied to a chat and, when needed, to one of the customer's orders
@@ -567,6 +636,7 @@
     if (d.type === 'ask') return askHTML(d, head);
     if (d.type === 'task') return taskDialogHTML(d, head);
     if (d.type === 'customer') return customerDialogHTML(d, o, head);
+    if (d.type === 'receipt') return receiptDialogHTML(d, o, head);
     if (d.type === 'conflict') {
       return head('Заказ изменён') + '<div class="sheet-body dlg-body"><p>Другой менеджер изменил или обработал заказ ' + o.number + ' после того, как вы его открыли. Если продолжить, ваши цены заменят его правки.</p></div>' +
         '<div class="sheet-foot dlg-foot"><button class="btn btn-primary" type="button" data-act="conflict-reload">Загрузить свежую версию</button><button class="btn btn-danger" type="button" data-act="conflict-keep">Продолжить со своими правками</button></div>';
@@ -637,6 +707,7 @@
       item('expire', 'Сессия истекла', 'Через 12 часов панель снова просит ключ') +
       item('ms', 'Изменён в МойСклад', 'Обработанный заказ поменяли напрямую в МойСклад') +
       item('nine', 'Наступило 21:00', 'Снова создать задачу проверки почты') +
+      item('receipt', 'Клиент прислал чек', 'Новый чек по заказу Белпочты, который ждёт оплаты') +
       item('reset', 'Сбросить данные', 'Вернуть заказы к исходному виду') + '</div>';
   }
   function demoOrder() { // scenarios run on the open editable order, otherwise on 1124
@@ -649,6 +720,12 @@
     if (id === 'expire') return SWP.expireSession();
     if (id === 'ms') { SWP.setChangedInMs(1118, true); return go('#/order/1118'); }
     if (id === 'nine') { ui.postOpen = false; SWP.openPostCheck(); return go('#/tasks'); }
+    if (id === 'receipt') { // the open order if it waits for a receipt, otherwise the first one that does
+      var cur = route().n, waits = function (o) { return o.status === 'payment' && !o.paid && !SWP.pendingReceipt(o); };
+      var target = cur && waits(SWP.order(cur)) ? SWP.order(cur) : SWP.queue({}).filter(waits)[0];
+      if (!target) { toast('Нет заказов Белпочты, которые ждут чек'); return render(); }
+      SWP.receiveReceipt(target.number); ui.tab = 'note'; toast('Клиент прислал чек по заказу ' + target.number); return go('#/order/' + target.number);
+    }
     if (id === 'fail') { SWP.setFlag('failShipment', !SWP.flags.failShipment); return; }
     if (id === 'down') { SWP.setFlag('moyskladDown', !SWP.flags.moyskladDown); return; }
     var o = demoOrder();
@@ -795,7 +872,29 @@
     'to-preview': function () { ui.dialog = { type: 'preview', n: ui.dialog.n }; renderDialog(); },
     'order-new': function () { var n = SWP.createOrder(); go('#/order/' + n); toast('Заказ ' + n + ' создан. Заполните его и обработайте'); },
     'edit-on': function (b, n) { ui.editing = n; render(); },
-    'receipt-ok': function (b, n) { if (SWP.approveReceipt(n)) toast('Чек подтверждён. Введите трек-код и отправьте заказ на сборку'); },
+    'receipt-open': function (b, n) { ui.dialog = { type: 'receipt', n: +b.getAttribute('data-n') || n, step: 'view' }; renderDialog(); },
+    'receipt-ok': function (b, n) {
+      var num = ui.dialog ? ui.dialog.n : n;
+      if (!SWP.approveReceipt(num)) return;
+      ui.dialog = null; toast('Чек подтверждён. Введите трек-код и отправьте заказ на сборку');
+      if (route().n !== num) go('#/order/' + num); else render();
+    },
+    'receipt-no': function () { ui.dialog.step = 'reject'; ui.dialog.error = ''; renderDialog(); },
+    'rj-back': function () { ui.dialog.step = 'view'; ui.dialog.error = ''; renderDialog(); },
+    'rj-reason': function (b) { ui.dialog.reason = b.getAttribute('data-r'); ui.dialog.error = ''; renderDialog(); var f = $('#rj-amount'); if (f) f.focus(); },
+    'rj-send': function () {
+      var d = ui.dialog, res = SWP.rejectReceipt(d.n, d.reason, d.amount);
+      if (res.error) { d.error = res.error; renderDialog(); var f = $('#rj-amount'); if (f) f.focus(); return; }
+      ui.dialog = null; render();
+      toast(d.reason === 'short' ? 'Чек отклонён. Клиенту отправлен запрос доплаты' : 'Чек отклонён. Клиента попросили провести платёж ещё раз');
+    },
+    'receipt-minibus': function () {
+      var n = ui.dialog.n;
+      ask(n, 'Перевести заказ на маршрутку?', 'Чек будет отклонён, заказ вернётся в «Готов к обработке» с доставкой маршруткой. Возврат денег, если он нужен, оформляется вручную.', [
+        { label: 'Перевести на маршрутку', run: function () { SWP.receiptToMinibus(n); toast('Заказ ' + n + ' переведён на маршрутку. Выберите город и обработайте заново'); if (route().n !== n) go('#/order/' + n); } }
+      ]);
+    },
+    'note-dl': function (b, n) { toast('Файл «Накладная ' + n + '.pdf» скачан'); },
     'pack-paid': function (b, n) {
       var o = SWP.order(n);
       if (SWP.compute(o).trackingBad) { // send the manager to the tracking code first
@@ -813,12 +912,6 @@
         { label: 'Предложить доставку на адрес', run: function () { SWP.offerOtherDelivery(n, 'minsk-address'); toast('Клиенту предложена доставка на адрес'); } },
         { label: 'Предложить Белпочту', kind: 'plain', run: function () { SWP.offerOtherDelivery(n, 'post'); toast('Клиенту предложена Белпочта'); } },
         { label: 'Заблокировать клиента', kind: 'danger', run: function () { SWP.setBlocked(SWP.order(n).customer, true); toast('Клиент заблокирован. Заказ остался в очереди, решите, удалять ли его'); } }
-      ]);
-    },
-    'receipt-no': function (b, n) {
-      ask(n, 'Чек не подходит', 'Клиент получит сообщение в боте. Возврат денег, если он нужен, оформляется вручную.', [
-        { label: 'Попросить новый чек', run: function () { toast('Клиента попросили прислать новый чек. Заказ ждёт оплаты'); } },
-        { label: 'Перевести на маршрутку', kind: 'plain', run: function () { SWP.receiptToMinibus(n); toast('Заказ ' + n + ' переведён на маршрутку. Выберите город и обработайте заново'); } }
       ]);
     },
     'return-edit': function (b, n) {
@@ -996,6 +1089,7 @@
     if (t.id === 'pay') SWP.setSetting('payment', t.value); // Belposhta switches off the moment the details become empty (S-15)
     if (t.id === 'ch-q') { ui.chatQ = t.value; render(); }
     if (t.id === 'ch-msg') ui.chatDraft = t.value;
+    if (t.id === 'rj-amount' && ui.dialog) { ui.dialog.amount = t.value; ui.dialog.error = ''; renderDialog(); }
     if (t.id === 'c-q' && ui.dialog) { ui.dialog.q = t.value; ui.dialog.name = $('#c-name') ? $('#c-name').value : null; renderDialog(); }
   });
   // Other fields commit on change (blur or Enter), so typing a price is not interrupted.
