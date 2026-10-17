@@ -10,7 +10,7 @@
   var ui = {
     filter: { q: '', status: '', delivery: '', from: '', to: '', action: false, sort: 'receivedAt', dir: 'desc' },
     menu: null,      // line id whose price-list menu is open
-    tab: 'note',     // order card tab: 'note' | 'dispatch' | 'progress'
+    tab: 'note',     // order card tab: 'note' | 'dispatch'
     files: [],       // mock attachments on the "Dispatch" tab
     refundFile: {},  // tasks: mock receipt attached to a refund, keyed by refund id
     chatFiles: [],   // chats: mock attachments of the message being written
@@ -313,12 +313,11 @@
       '<button class="btn btn-primary btn-lg btn-block' + (c.trackingBad && !c.blockers.length ? ' is-off' : '') + '" type="button" data-act="process" data-fk="process"' + (c.blockers.length ? ' disabled aria-describedby="blockers"' : '') + '>Обработать · ' + money(c.total) + '</button></div>';
 
     // A-27: after processing a minibus order gets the "Dispatch" tab; Belposhta is dispatched from the daily task (A-31).
-    // A-34: every order has the "Progress" tab with its stages and the log of actions.
-    var list = [['note', 'Накладная']].concat(o.delivery.type !== 'post' && ['packing', 'packed', 'dispatched'].indexOf(o.status) >= 0 ? [['dispatch', 'Отправка']] : []).concat([['progress', 'Прогресс']]);
-    var tab = list.some(function (t) { return t[0] === ui.tab; }) ? ui.tab : 'note';
-    var tabs = '<div class="seg o-tabs" role="tablist" style="grid-template-columns: repeat(' + list.length + ', 1fr)">' + list.map(function (t) {
+    var hasTabs = o.delivery.type !== 'post' && ['packing', 'packed', 'dispatched'].indexOf(o.status) >= 0;
+    var tab = hasTabs && ui.tab === 'dispatch' ? 'dispatch' : 'note';
+    var tabs = hasTabs ? '<div class="seg o-tabs" role="tablist">' + [['note', 'Накладная'], ['dispatch', 'Отправка']].map(function (t) {
       return '<button type="button" role="tab" class="seg-btn' + (tab === t[0] ? ' is-on' : '') + '" data-act="tab" data-t="' + t[0] + '" data-fk="tab-' + t[0] + '" aria-selected="' + (tab === t[0]) + '">' + t[1] + '</button>';
-    }).join('') + '</div>';
+    }).join('') + '</div>' : '';
     var head = '<div class="pg o-pg"><a class="back" href="#/">' + I.chev + 'Заказы</a>' +
       '<div class="o-head"><div class="o-title"><h1>Заказ ' + o.number + '</h1>' + pill(o) + kindTag(o) + '</div>' +
       '<p class="o-who"><button type="button" class="who-btn" data-act="customer" data-fk="who">' + I.user + '<b>' + esc(who(o)) + '</b></button>' + (cust.blocked ? '<span class="tag is-bad">заблокирован</span>' : '') + (cust.id !== 'retail' && !cust.tgId ? '<span class="tag">без Telegram</span>' : '') + (cust.person ? '<span>' + esc(cust.person) + '</span>' : '') +
@@ -326,7 +325,6 @@
       '<span class="muted">поступил ' + SWP.dateTime(o.receivedAt) + '</span></p>' +
       '<div class="o-tools">' + docsHTML(o) + '<button class="btn btn-sm btn-danger o-del" type="button" data-act="delete" data-fk="delete-top">' + I.trash + 'Удалить заказ</button></div></div>' + banners + tabs;
     if (tab === 'dispatch') return head + dispatchHTML(o) + '</div>';
-    if (tab === 'progress') return head + progressHTML(o) + '</div>';
     return head +
       '<div class="o-grid">' +
       '<div class="o-main"><section class="sec s-goods"><div class="sec-row"><h2 class="h2">Товары <small class="muted">' + c.lines.length + ' лин. · ' + c.units + ' шт</small></h2>' +
@@ -344,7 +342,7 @@
       '<p class="help">Обе заметки попадут в сообщение упаковщикам.</p></section>' + actionsHTML(o) + cta + '</aside></div></div>';
   }
 
-  /* ---------- documents, receipt check and the "Progress" tab (A-15, A-34, A-35) ---------- */
+  /* ---------- documents and the receipt check (A-15, A-34) ---------- */
   // The buttons appear once the document exists: the delivery note after processing, the receipt once the customer sent one.
   // A receipt waiting for a check is opened from the banner instead, where the action is asked for.
   function docsHTML(o) {
@@ -359,22 +357,7 @@
       '<button class="btn btn-primary btn-sm" type="button" data-act="receipt-open" data-fk="receipt-open">' + I.receipt + 'Открыть чек</button></div>';
     if (r && r.state === 'rejected') return '<div class="alert alert-warn">' + I.warn + '<p><b>Чек отклонён: ' + esc(SWP.REJECT[r.reason].toLowerCase()) + '.</b> ' +
       (r.reason === 'short' ? 'Клиента попросили доплатить ' + SWP.money(r.missing) : 'Клиента попросили провести платёж ещё раз') + ' и прислать новый чек. Когда он придёт, проверка появится здесь.</p></div>';
-    return '<div class="alert alert-warn">' + I.warn + '<p>Накладная и реквизиты отправлены, к оплате ' + due + '. Ждём чек от клиента: когда он придёт, здесь появится «Открыть чек»./p></div>';
-  }
-  function progressHTML(o) {
-    var path = SWP.stagePath(o), cur = path.map(function (s) { return s.id; }).indexOf(o.status);
-    var stages = path.map(function (s, i) {
-      var at = o.stages[s.id], st = i < cur ? 'is-done' : i === cur ? 'is-now' : 'is-next';
-      var note = i < cur ? (at ? SWP.dateTime(at) : 'пропущена') : i === cur ? 'Сейчас' + (at ? ', с ' + SWP.dateTime(at) : '') + (s.id === 'payment' && o.paid ? ' · оплата подтверждена' : '') : 'Впереди';
-      return '<li class="stg-i ' + st + '"' + (i === cur ? ' aria-current="step"' : '') + '><span class="stg-dot" aria-hidden="true">' + (i < cur ? I.check : i + 1) + '</span>' +
-        '<span class="stg-t"><b>' + esc(s.label) + '</b><small>' + note + '</small></span></li>';
-    }).join('');
-    var log = o.log.slice().reverse().map(function (x) {
-      return '<li><time datetime="' + x.at + '">' + SWP.dateTime(x.at) + '</time><span><b>' + esc(x.who) + '</b> ' + esc(x.text.charAt(0).toLowerCase() + x.text.slice(1)) + '</span></li>';
-    }).join('');
-    return '<section class="sec"><h2 class="h2">Стадии заказа</h2><ol class="stg">' + stages + '</ol>' +
-      '<p class="help">Пройденные стадии отмечены временем перехода, текущая выделена, предстоящие серые. Набор стадий зависит от доставки: телефон согласуют только для маршрутки по Минску, оплату ждут только у Белпочты.</p></section>' +
-      '<section class="sec"><h2 class="h2">Журнал действий <small class="muted">' + o.log.length + '</small></h2><ol class="log">' + log + '</ol></section>';
+    return '<div class="alert alert-warn">' + I.warn + '<p>Накладная и реквизиты отправлены, к оплате ' + due + '. Ждём чек от клиента: когда он придёт, здесь появится «Открыть чек».</p></div>';
   }
   function receiptDialogHTML(d, o, head) {
     var r = SWP.lastReceipt(o);

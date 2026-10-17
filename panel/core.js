@@ -12,7 +12,7 @@
   var SESSION_MS = 12 * 60 * 60 * 1000;
   var MUTE_MS = 5 * 60 * 1000;
   var MAX_TRIES = 3;
-  var KEY = 'swp-mock-v17';
+  var KEY = 'swp-mock-v18';
   var TRACK_RE = /^[A-Z]{2}\d{9}BY$/; // Belposhta tracking code: two letters, nine digits, BY (A-15)
 
   var STATUSES = [
@@ -90,59 +90,31 @@
         payment: 'Получатель: ИП Образец О. О.\nIBAN: BY00 XXXX 0000 0000 0000 0000 0000\nНазначение: оплата заказа, номер заказа'
       },
       postCheck: { due: true }, // the daily 21:00 Belposhta dispatch check is waiting (A-31)
-      flags: { failShipment: false, moyskladDown: false, strictStock: false },
-      tick: 0 // minutes of mock time passed since D.now; every logged action moves the clock on
+      flags: { failShipment: false, moyskladDown: false, strictStock: false }
     };
   }
   function load() {
     try { var s = JSON.parse(localStorage.getItem(KEY)); if (s && s.orders && s.guard && s.customers && s.priceUndo && s.postCheck && s.settings && s.settings.postCheckTime && s.chats && s.refunds && s.custom && s.packers) { state = s; return; } } catch (e) {}
     fresh();
   }
-  function fresh() { state = seed(); state.orders.forEach(seedHistory); } // the history needs the state, so it is added after seeding
+  function fresh() { state = seed(); state.orders.forEach(seedReceipts); } // the amount due needs the state, so receipts are added after seeding
   function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
-  // A status change, wherever it happens, stamps the stage with the time it was reached ("Progress" tab, A-34).
-  function emit() {
-    state.orders.forEach(function (o) { if (o.stages && o.stageNow !== o.status) { o.stages[o.status] = now(); o.stageNow = o.status; } });
-    save(); subs.forEach(function (f) { f(); });
-  }
-
-  /* ---------- order history: stages and the action log (A-34) ---------- */
-  function iso(d) { var p = function (x) { return (x < 10 ? '0' : '') + x; }; return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + 'T' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':00'; }
-  function later(at, min) { return iso(new Date(new Date(at).getTime() + min * 60000)); }
-  function now() { return later(D.now, state ? state.tick : 0); }
-  function actor() { var s = state && state.session; return s && s.level === 'admin' ? 'Супер-админ' : 'Менеджер'; }
-  function logAdd(o, text, who) { state.tick++; o.log.push({ at: now(), who: who || actor(), text: text }); }
-  // The stages an order passes depend on its delivery: Minsk minibus adds the phone check, Belposhta the payment (BR-8).
-  function stagePath(o) {
-    return STATUSES.filter(function (s) { return (s.id !== 'phone' || isMinsk(o) || o.stages.phone) && (s.id !== 'payment' || o.delivery.type === 'post' || o.stages.payment); });
-  }
-  // The seed orders get the history they would have had by now: stage times and log entries before D.now.
-  function seedHistory(o) {
-    var at = o.receivedAt, src = D.orders.filter(function (x) { return x.number === o.number; })[0];
-    var add = function (min, text, who) { at = later(at, min); o.log.push({ at: at, who: who, text: text }); return at; };
-    var post = o.delivery.type === 'post', due = function () { return compute(o).total + 10; };
-    o.stages = { new: o.receivedAt }; o.stageNow = o.status; o.log = [{ at: o.receivedAt, who: 'Клиент', text: 'Оформил заказ на сайте' }]; o.receipts = [];
-    if (o.status === 'new') return o;
-    if (o.status === 'phone') { o.stages.phone = add(1, 'Подтвердил заказ в боте и указал телефон для водителя', 'Клиент'); return o; }
-    if (isMinsk(o)) { o.stages.phone = add(1, 'Подтвердил заказ в боте и указал телефон для водителя', 'Клиент'); o.stages.accepted = add(20, 'Согласовал телефон', 'Менеджер'); }
-    else o.stages.accepted = add(1, 'Подтвердил заказ в боте', 'Клиент');
-    if (o.status === 'accepted') return o;
-    if (post) {
-      o.stages.payment = add(80, 'Обработал заказ: накладная и реквизиты отправлены клиенту, к оплате ' + money(due()), 'Менеджер');
-      var paidUp = o.status !== 'payment', sent = src && src.receiptAt ? src.receiptAt : later(at, 150);
-      at = sent; o.log.push({ at: at, who: 'Клиент', text: 'Прислал чек об оплате' });
-      o.receipts.push({ file: 'Чек об оплате.jpg', at: at, due: due(), amount: src && src.receiptAmount != null ? src.receiptAmount : due(), state: paidUp ? 'approved' : 'pending' });
-      if (!paidUp) return o;
-      add(25, 'Подтвердил чек', 'Менеджер');
-      o.stages.packing = add(10, 'Ввёл трек-код ' + o.tracking + ' и отправил заказ на сборку', 'Менеджер');
-    } else o.stages.packing = add(60, 'Обработал заказ: накладная отправлена клиенту и в группу упаковщиков', 'Менеджер');
-    if (o.status === 'packing') return o;
-    o.stages.packed = add(240, 'Нажал «Упаковано» в группе', 'Упаковщик ' + D.packers[o.number % D.packers.length].user);
-    if (o.status === 'packed') return o;
-    o.stages.dispatched = add(180, post ? 'Подтвердил отправку посылки почтой' : 'Отправил клиенту информацию об отправке', 'Менеджер');
-    return o;
-  }
+  function emit() { save(); subs.forEach(function (f) { f(); }); }
   function on(fn) { subs.push(fn); }
+
+  function later(at, min) {
+    var t = new Date(new Date(at).getTime() + min * 60000), p = function (x) { return (x < 10 ? '0' : '') + x; };
+    return t.getFullYear() + '-' + p(t.getMonth() + 1) + '-' + p(t.getDate()) + 'T' + p(t.getHours()) + ':' + p(t.getMinutes()) + ':00';
+  }
+  // A seed Belposhta order past processing has the receipt the customer sent (approved once the order went to packing).
+  function seedReceipts(o) {
+    var src = D.orders.filter(function (x) { return x.number === o.number; })[0];
+    o.receipts = [];
+    if (o.delivery.type !== 'post' || ['payment', 'packing', 'packed', 'dispatched'].indexOf(o.status) < 0) return;
+    var due = compute(o).total + 10;
+    o.receipts.push({ file: 'Чек об оплате.jpg', at: src.receiptAt || later(o.receivedAt, 230), due: due, amount: src.receiptAmount != null ? src.receiptAmount : due,
+      state: o.status === 'payment' ? 'pending' : 'approved' });
+  }
   function reset() { var old = state; fresh(); state.session = old.session; state.guard = old.guard; state.security = old.security; emit(); }
 
   /* ---------- sign-in (A-1, AC-38, AC-89, AC-90) ---------- */
@@ -389,15 +361,12 @@
     if (orig) {
       var shipped = isShipped(orig);
       mergeItems(orig, o); orig.merged = o.number; orig.dirty = false;
-      logAdd(orig, 'Объединил с заказом дозаказ ' + o.number + (shipped ? ': новая накладная отправлена клиенту и в группу' : ''));
       if (shipped) orig.packingText = text; // the old shipment and group message are replaced
       state.orders = state.orders.filter(function (x) { return x !== o; });
       emit(); return { ok: true, merged: orig.number, shipped: shipped };
     }
     o.packingText = text;
     o.status = o.delivery.type === 'post' ? 'payment' : 'packing'; // BR-6: Belposhta waits for the receipt
-    logAdd(o, o.status === 'payment' ? 'Обработал заказ: накладная и реквизиты отправлены клиенту, к оплате ' + money(c.total + 10)
-      : 'Обработал заказ: накладная отправлена клиенту и в группу упаковщиков');
     emit(); return { ok: true };
   }
   // A-33: an order the manager composes by hand starts ready for processing, with nothing filled in.
@@ -405,8 +374,7 @@
     var n = state.orders.reduce(function (m, o) { return Math.max(m, o.number); }, 0) + 1;
     state.orders.push({ number: n, receivedAt: D.now, customer: 'retail', siteTag: '', kind: 'main', original: null, status: 'accepted', tier: 10,
       delivery: { type: 'minibus', city: '' }, items: [], deduction: 0, customerNote: '', managerNote: '', tracking: '', surcharge: 15,
-      phoneApproved: false, packingText: '', remoteChanged: false, pendingRetry: false, manual: true,
-      stages: { accepted: now() }, stageNow: 'accepted', log: [{ at: now(), who: actor(), text: 'Создал заказ вручную' }], receipts: [] });
+      phoneApproved: false, packingText: '', remoteChanged: false, pendingRetry: false, manual: true, receipts: [] });
     emit(); return n;
   }
   function createCustomer(name, person) { // a counterparty entered by hand has no Telegram link, so the bot cannot write to them
@@ -419,17 +387,17 @@
   }
 
   /* ---------- order actions (A-13, A-14, A-15, A-17, A-18, A-23, A-26, A-27) ---------- */
-  function approvePhone(n) { var o = order(n); if (!o || o.status !== 'phone') return; o.status = 'accepted'; o.phoneApproved = true; logAdd(o, 'Согласовал телефон'); emit(); }
+  function approvePhone(n) { var o = order(n); if (!o || o.status !== 'phone') return; o.status = 'accepted'; o.phoneApproved = true; emit(); }
   // "Offer another method" restarts only the delivery choice in the bot (A-14).
-  function offerOtherDelivery(n, type) { var o = order(n); if (!o) return; o.status = 'new'; o.offered = type; o.phoneApproved = false; logAdd(o, 'Отклонил телефон и предложил ' + (type === 'post' ? 'Белпочту' : 'доставку на адрес')); emit(); } // back to "New": the order waits for the customer again
+  function offerOtherDelivery(n, type) { var o = order(n); if (!o) return; o.status = 'new'; o.offered = type; o.phoneApproved = false; emit(); } // back to "New": the order waits for the customer again
   function setBlocked(id, on) { var c = customerById(id); if (c && c.id !== 'retail') { c.blocked = !!on; emit(); } }
   function receiptToMinibus(n) { // rejected receipt, the customer switches to a minibus (AJ-3)
     var o = order(n); if (!o || o.status !== 'payment') return;
     var r = pendingReceipt(o); if (r) r.state = 'rejected';
-    o.delivery.type = 'minibus'; o.tracking = ''; o.paid = false; o.status = 'accepted'; logAdd(o, 'Перевёл заказ с Белпочты на маршрутку'); emit();
+    o.delivery.type = 'minibus'; o.tracking = ''; o.paid = false; o.status = 'accepted'; emit();
   }
   function canReturn(o) { return ['payment', 'packing'].indexOf(o.status) >= 0; }
-  function returnForEditing(n) { var o = order(n); if (!o || !canReturn(o)) return false; o.status = 'accepted'; o.packingText = ''; o.changedInMs = false; logAdd(o, 'Вернул заказ на редактирование'); emit(); return true; }
+  function returnForEditing(n) { var o = order(n); if (!o || !canReturn(o)) return false; o.status = 'accepted'; o.packingText = ''; o.changedInMs = false; emit(); return true; }
   // BR-10: Belposhta is prepaid, so deleting an order after the receipt was approved leaves a refund to make.
   function removeOrder(n) {
     var o = order(n); if (!o) return null;
@@ -481,7 +449,7 @@
   function resendEdited(n) {
     var o = order(n); if (!o || o.status !== 'packing' || !o.dirty) return false;
     var c = compute(o); if (c.blockers.length || c.trackingBad) return false;
-    o.dirty = false; o.packingText = packingMessage(o, c); logAdd(o, 'Изменил заказ у упаковщиков: новая накладная отправлена клиенту и в группу'); emit(); return true;
+    o.dirty = false; o.packingText = packingMessage(o, c); emit(); return true;
   }
   // A-17, S-11: an add-on to an unpacked original is merged into the earlier number and priced again.
   // BR-5: an add-on to an unpacked original is merged into it automatically when the add-on is processed.
@@ -492,14 +460,14 @@
     if (orig.delivery.type === 'post' && orig.paid) return null;
     return orig;
   }
-  function sendDispatch(n, text) { var o = order(n); if (!o || ['packing', 'packed'].indexOf(o.status) < 0) return false; o.dispatchText = text; o.status = 'dispatched'; logAdd(o, 'Отправил клиенту информацию об отправке'); emit(); return true; }
+  function sendDispatch(n, text) { var o = order(n); if (!o || ['packing', 'packed'].indexOf(o.status) < 0) return false; o.dispatchText = text; o.status = 'dispatched'; emit(); return true; }
   function setChangedInMs(n, on) { var o = order(n); if (o) { o.changedInMs = !!on; emit(); } }
 
   // A-15, BR-6: Belposhta goes in two manager steps after processing. Approving the receipt unlocks the tracking code;
   // "Send to packing" then needs a valid code and the confirmed group message.
   function approveReceipt(n) {
     var o = order(n), r = o && pendingReceipt(o); if (!r || o.status !== 'payment' || o.paid) return false;
-    r.state = 'approved'; o.paid = true; logAdd(o, 'Подтвердил чек'); emit(); return true;
+    r.state = 'approved'; o.paid = true; emit(); return true;
   }
   // The receipt the manager has to check now: the latest one, while nobody has approved or rejected it.
   function lastReceipt(o) { var list = o.receipts || []; return list[list.length - 1] || null; }
@@ -524,16 +492,13 @@
     r.state = 'rejected'; r.reason = reason; r.missing = reason === 'short' ? amount : null;
     o.due = reason === 'short' ? amount : r.due; // what the next receipt has to cover
     botSay(o.customer, rejectText(o, reason, amount), [], o.number);
-    logAdd(o, 'Отклонил чек: ' + REJECT[reason].toLowerCase() + (reason === 'short' ? '. Клиенту отправлен запрос доплаты ' + money(amount) : '. Клиента попросили провести платёж ещё раз'));
     emit(); return { ok: true };
   }
   // Mockup only: the customer sends a receipt through the bot (the first one or a new one after a rejection).
   function receiveReceipt(n) {
     var o = order(n); if (!o || o.status !== 'payment' || o.paid || pendingReceipt(o)) return false;
     var last = lastReceipt(o), extra = !!(last && last.reason === 'short'), due = o.due || compute(o).total + 10;
-    state.tick++;
-    o.receipts.push({ file: extra ? 'Чек доплаты.jpg' : 'Чек об оплате.jpg', at: now(), due: due, amount: due, state: 'pending', extra: extra });
-    o.log.push({ at: now(), who: 'Клиент', text: extra ? 'Прислал чек доплаты' : last ? 'Прислал новый чек' : 'Прислал чек об оплате' });
+    o.receipts.push({ file: extra ? 'Чек доплаты.jpg' : 'Чек об оплате.jpg', at: D.now, due: due, amount: due, state: 'pending', extra: extra });
     emit(); return true;
   }
   function setTracking(n, value) {
@@ -542,7 +507,7 @@
   }
   function sendPaidToPacking(n, text) {
     var o = order(n); if (!o || o.status !== 'payment' || !o.paid || !TRACK_RE.test(o.tracking)) return false;
-    o.packingText = text; o.status = 'packing'; logAdd(o, 'Ввёл трек-код ' + o.tracking + ' и отправил заказ на сборку'); emit(); return true;
+    o.packingText = text; o.status = 'packing'; emit(); return true;
   }
 
   /* ---------- tasks (A-24, A-28, A-31) ---------- */
@@ -551,10 +516,10 @@
     return state.orders.filter(function (o) { return o.delivery.type === 'post' && o.status === 'packed'; })
       .sort(function (a, b) { return a.number - b.number; });
   }
-  function confirmDispatch(n) { var o = order(n); if (!o || o.status !== 'packed') return false; o.status = 'dispatched'; o.dispatchedAt = D.now; logAdd(o, 'Подтвердил отправку посылки почтой'); emit(); return true; }
+  function confirmDispatch(n) { var o = order(n); if (!o || o.status !== 'packed') return false; o.status = 'dispatched'; o.dispatchedAt = D.now; emit(); return true; }
   // A mistaken Belposhta confirmation can be undone for 24 hours (A-31).
   function canRevertDispatch(o) { return o.status === 'dispatched' && o.delivery.type === 'post' && !!o.dispatchedAt && new Date(D.now) - new Date(o.dispatchedAt) < 86400000; }
-  function revertDispatch(n) { var o = order(n); if (!o || !canRevertDispatch(o)) return false; o.status = 'packed'; o.dispatchedAt = null; logAdd(o, 'Вернул статус «Упакован»'); emit(); return true; }
+  function revertDispatch(n) { var o = order(n); if (!o || !canRevertDispatch(o)) return false; o.status = 'packed'; o.dispatchedAt = null; emit(); return true; }
   function closePostCheck() { state.postCheck.due = false; emit(); } // unconfirmed parcels return in tomorrow's task
   function openPostCheck() { state.postCheck.due = true; emit(); }
   // Tasks are derived from order state, so each one closes itself when its action is done anywhere in the panel.
@@ -700,7 +665,7 @@
     settings: function () { return state.settings; }, setSetting: setSetting, addCity: addCity, removeCity: removeCity, cityInUse: cityInUse,
     newManagerKey: newManagerKey, packerReport: packerReport, addPacker: addPacker, removePacker: removePacker,
     rejectReceipt: rejectReceipt, receiveReceipt: receiveReceipt, rejectText: rejectText, missingAmount: missingAmount, REJECT: REJECT, pendingReceipt: pendingReceipt, lastReceipt: lastReceipt,
-    stagePath: stagePath, hasNote: function (o) { return ['payment', 'packing', 'packed', 'dispatched'].indexOf(o.status) >= 0; },
+    hasNote: function (o) { return ['payment', 'packing', 'packed', 'dispatched'].indexOf(o.status) >= 0; },
     tasks: tasks, postList: postList, confirmDispatch: confirmDispatch, revertDispatch: revertDispatch, canRevertDispatch: canRevertDispatch, closePostCheck: closePostCheck, openPostCheck: openPostCheck,
     markRemoteChange: function (n) { var o = order(n); if (o) { o.remoteChanged = true; emit(); } },
     clearRemoteChange: function (n) { var o = order(n); if (o) { o.remoteChanged = false; emit(); } },
